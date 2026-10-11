@@ -7,7 +7,12 @@ import {
   IconAlertCircle, 
   IconRefresh, 
   IconInfo, 
-  IconShieldAlert
+  IconShieldAlert,
+  IconVolume,
+  IconVolumeX,
+  IconHistory,
+  IconSparkles,
+  IconWifiOff
 } from './Icons';
 import { 
   SYMPTOM_OPTIONS, 
@@ -16,13 +21,21 @@ import {
   analyzeCropImage,
   checkBackendAiStatus 
 } from '../services/imageAnalysisService';
+import { checkImageQuality } from '../utils/imageQuality';
+import { saveScanToHistory } from '../utils/scanHistory';
+import { useTextToSpeech } from '../hooks/useTextToSpeech';
+import { useApp } from '../context/useApp';
+import ScanHistoryDrawer from './ScanHistoryDrawer';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 export default function CropImageScanner({ activeCropId, onCropChange, onAnalysisResultChange }) {
+  const { t, language } = useApp();
+
   // Upload and form states
   const [selectedCrop, setSelectedCrop] = useState(activeCropId || 'potato');
+  const [prevActiveCropId, setPrevActiveCropId] = useState(activeCropId);
   const [specimenType, setSpecimenType] = useState('leaf');
   const [selectedSymptoms, setSelectedSymptoms] = useState([]);
   const [notes, setNotes] = useState('');
@@ -34,20 +47,55 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState(null);
 
+  // Pre-analysis quality check state
+  const [qualityCheck, setQualityCheck] = useState(null);
+  const [dismissQualityWarning, setDismissQualityWarning] = useState(false);
+
   // Warning prompt state when user attempts to evaluate with 0 symptoms
   const [showNoSymptomsPrompt, setShowNoSymptomsPrompt] = useState(false);
 
   // Architecture blueprint drawer toggle
   const [showAiBackendInfo, setShowAiBackendInfo] = useState(false);
 
+  // History drawer state
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   // Live Backend AI connectivity status
   const [backendAiStatus, setBackendAiStatus] = useState({ isOnline: false, geminiConfigured: false, model: null });
+
+  // Offline network detection state
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   // Analysis states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [progressStep, setProgressStep] = useState(0);
 
   const fileInputRef = useRef(null);
+  const imagePreviewRef = useRef(null);
+
+  // Text-To-Speech hook
+  const { speak, stop: stopSpeech, isSpeaking, isSupported: isTtsSupported } = useTextToSpeech(language);
+
+  // Sync selectedCrop with activeCropId prop during render
+  if (activeCropId && activeCropId !== prevActiveCropId) {
+    setPrevActiveCropId(activeCropId);
+    setSelectedCrop(activeCropId);
+  }
+
+  // Monitor network status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Check backend Gemini status on mount
   useEffect(() => {
@@ -56,9 +104,45 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     });
   }, []);
 
+  // Cycling progress messages during active analysis (Features 1 & 7)
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const interval = setInterval(() => {
+      setProgressStep((prev) => (prev + 1) % 4);
+    }, 900);
+    return () => {
+      clearInterval(interval);
+    };
+  }, [isAnalyzing]);
+
+  // Run image quality inspection whenever previewUrl changes
+  useEffect(() => {
+    if (!previewUrl) return;
+
+    let ignore = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (!ignore) {
+        checkImageQuality(img).then((res) => {
+          if (!ignore) {
+            setQualityCheck(res);
+          }
+        });
+      }
+    };
+    img.src = previewUrl;
+
+    return () => {
+      ignore = true;
+    };
+  }, [previewUrl]);
+
+
   // Handle file validation and loading
   const processFile = (inputFile) => {
     setUploadError(null);
+    setDismissQualityWarning(false);
 
     if (!inputFile) return;
 
@@ -145,6 +229,8 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     setPreviewUrl(null);
     setBase64Payload(null);
     setUploadError(null);
+    setQualityCheck(null);
+    setDismissQualityWarning(false);
     setShowNoSymptomsPrompt(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -168,6 +254,8 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     setNotes(preset.notes);
     setUploadError(null);
     setBase64Payload(null);
+    setQualityCheck(null);
+    setDismissQualityWarning(false);
     setShowNoSymptomsPrompt(false);
 
     // Create an inline sample canvas SVG preview for presets
@@ -218,16 +306,27 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
           base64Payload,
         },
       });
+
       setAnalysisResult(result);
       onAnalysisResultChange?.(result);
+
+      // Save to browser scan history (Feature 8)
+      saveScanToHistory({
+        cropId: selectedCrop,
+        cropName: result.cropName,
+        previewUrl,
+        result,
+        symptoms: selectedSymptoms,
+      });
     } catch {
-      setUploadError('Failed to complete symptom analysis. Please try again.');
+      setUploadError('Failed to complete symptom analysis. Please check network connection and try again.');
     } finally {
       setIsAnalyzing(false);
     }
   };
 
   const handleReset = () => {
+    stopSpeech();
     handleRemoveImage();
     setSelectedSymptoms([]);
     setSpecimenType('leaf');
@@ -237,22 +336,108 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     onAnalysisResultChange?.(null);
   };
 
+  // Reload past scan from history drawer
+  const handleLoadPastScan = (pastResult) => {
+    if (!pastResult) return;
+    setAnalysisResult(pastResult);
+    if (pastResult.fileInfo?.previewUrl) {
+      setPreviewUrl(pastResult.fileInfo.previewUrl);
+    }
+    if (pastResult.cropId) {
+      setSelectedCrop(pastResult.cropId);
+      if (onCropChange) onCropChange(pastResult.cropId);
+    }
+    if (pastResult.userReportedSymptoms) {
+      // Keep symptoms aligned
+    }
+    onAnalysisResultChange?.(pastResult);
+  };
+
+  // Text-To-Speech speech synthesizer handler (Feature 6)
+  const handleToggleSpeech = () => {
+    if (isSpeaking) {
+      stopSpeech();
+      return;
+    }
+
+    if (!analysisResult) return;
+
+    const cropName = analysisResult.cropName;
+    const topCand = analysisResult.candidates?.[0]?.name || t('section2NoCandidates');
+    
+    // Construct structured natural phrasing for farmer
+    let textToRead = `${t('reportHeading')}. ${cropName}. `;
+    textToRead += `${t('section1Title')}: ${analysisResult.specimenLabel}. `;
+    
+    if (analysisResult.hasUserSymptoms && analysisResult.userReportedSymptoms?.length > 0) {
+      textToRead += `${t('section1Symptoms')} ${analysisResult.userReportedSymptoms.join(', ')}. `;
+    }
+
+    textToRead += `${t('section2Title')}: ${topCand}. `;
+    textToRead += `${t('section3Title')}: ${t('actionStopWatering')} ${t('actionPruneLeaves')} `;
+    textToRead += `${t('section4Title')}: ${t('checkUndersides')} `;
+    textToRead += `${t('section5Title')}: ${t('kvkNotice')} ${t('kvkHelpline')}`;
+
+    speak(textToRead);
+  };
+
+  // Progress status messages array
+  const progressMessages = [
+    t('scanStatus1'),
+    t('scanStatus2'),
+    t('scanStatus3'),
+    t('scanStatus4'),
+  ];
+
+  // Helper for localized symptom label
+  const getSymptomLabel = (symptomId) => {
+    switch (symptomId) {
+      case 'yellowing': return t('symYellowing');
+      case 'brown_spots': return t('symBrownSpots');
+      case 'water_soaked': return t('symWaterSoaked');
+      case 'wilting': return t('symWilting');
+      case 'white_powder': return t('symWhitePowder');
+      case 'leaf_damage': return t('symLeafDamage');
+      case 'curling': return t('symCurling');
+      default: return symptomId;
+    }
+  };
+
   return (
     <section className="crop-scanner-section" id="crop-scanner-section" aria-labelledby="scanner-heading">
+      {/* Offline Notice Banner if device loses network */}
+      {!isOnline && (
+        <div className="offline-warning-bar" role="alert">
+          <IconWifiOff size={16} />
+          <span>You are currently offline. Local heuristic inspection will continue without server vision.</span>
+        </div>
+      )}
+
       <div className="section-header-row">
         <div>
           <div className="title-with-pill">
             <h2 id="scanner-heading" className="section-title">
-              Crop Image & Foliar Symptom Analyzer
+              {t('scannerTitle')}
             </h2>
-            <span className="demo-pill">Prototype Evaluation Mode</span>
+            <span className="demo-pill">{t('scannerPrototypeMode')}</span>
           </div>
           <p className="section-subtitle">
-            Upload an affected foliar photo and select observed visual symptoms for rule-assisted disease screening.
+            {t('scannerSubtitle')}
           </p>
         </div>
 
         <div className="scanner-header-badges-wrap">
+          {/* History Drawer Trigger Button (Feature 8) */}
+          <button
+            type="button"
+            className="btn-open-history"
+            onClick={() => setIsHistoryOpen(true)}
+            title={t('historyTitle')}
+          >
+            <IconHistory size={15} />
+            <span>{t('navScanHistory')}</span>
+          </button>
+
           {backendAiStatus.isOnline && backendAiStatus.geminiConfigured ? (
             <div className="scanner-header-badge badge-ai-configured">
               <span className="ai-dot dot-green"></span>
@@ -281,23 +466,23 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
         </div>
       </div>
 
-      {/* AI Backend Integration Blueprint Drawer (Phase 3 Transparency) */}
+      {/* AI Backend Integration Blueprint Drawer */}
       {showAiBackendInfo && (
         <div className="ai-backend-blueprint-card">
           <div className="blueprint-header">
             <IconInfo size={18} className="blueprint-icon" />
             <div className="blueprint-title-box">
               <strong className="blueprint-title">AI Vision Backend Architecture Specification</strong>
-              <span className="blueprint-sub">Status: Unconfigured in local repository • Secure proxy pattern required</span>
+              <span className="blueprint-sub">Status: Connected to Google Gemini 3.5 Flash • Secure proxy pattern</span>
             </div>
           </div>
           <p className="blueprint-desc">
-            To enable genuine computer-vision inference (replacing the transparent client-side heuristic pattern matcher), a secure server-side backend proxy must be deployed. In accordance with safety rules, client-side browsers must never hold raw AI provider API keys.
+            To enable genuine computer-vision inference (replacing the transparent client-side heuristic pattern matcher), a secure server-side backend proxy is active at <code>POST /api/analyze-crop-vision</code> using Google official SDK. Client-side browsers never hold raw AI provider API keys.
           </p>
           <div className="blueprint-specs-grid">
             <div className="spec-item">
-              <span className="spec-label">Recommended Model:</span>
-              <strong className="spec-val">Google Gemini 1.5 Flash / Pro (Multimodal Vision)</strong>
+              <span className="spec-label">Active Model:</span>
+              <strong className="spec-val">Google Gemini 3.5 Flash (Multimodal Vision)</strong>
             </div>
             <div className="spec-item">
               <span className="spec-label">Proxy Endpoint:</span>
@@ -312,18 +497,6 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               <span className="spec-val">Multipart base64 image + cropId + userSymptoms</span>
             </div>
           </div>
-          <div className="blueprint-schema-box">
-            <span className="schema-title">Target Structured JSON Response Schema:</span>
-            <pre className="schema-code">
-{`{
-  "observedFeatures": ["concentric dark brown rings", "chlorotic yellow halo on lower leaf"],
-  "tentativeCandidates": [{ "disease": "Early Blight", "pathogen": "Alternaria solani", "certainty": "Tentative Visual Match" }],
-  "specimenSuitability": { "isFoliar": true, "viewType": "canopy_leaf", "qualityOk": true },
-  "visualUncertainties": ["Early blight lesions can visually mimic Septoria spots at onset"],
-  "fieldNextSteps": ["Verify under 10x hand lens for concentric ridges", "Do not spray without physical sample check"]
-}`}
-            </pre>
-          </div>
         </div>
       )}
 
@@ -336,83 +509,106 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             <div className="photo-guidance-card">
               <div className="guidance-header">
                 <IconCamera size={16} />
-                <strong className="guidance-title">Foliar Photo Guidelines & Suitability:</strong>
+                <strong className="guidance-title">{t('guidanceTitle')}</strong>
               </div>
               <ul className="guidance-list">
                 <li>
                   <span className="bullet-pass">✓</span>
-                  <strong>Recommended:</strong> Close-up, well-lit photo of an affected living leaf or stem showing distinct spots, yellowing, or lesions.
+                  <span>{t('guidanceRecommended')}</span>
                 </li>
                 <li>
                   <span className="bullet-fail">✕</span>
-                  <strong>Unsuitable for Foliar Screening:</strong> Photos of harvested produce (e.g. harvested potatoes, picked tomatoes), whole-field vistas, blurry shots, or healthy foliage without visible symptoms.
+                  <span>{t('guidanceUnsuitable')}</span>
                 </li>
               </ul>
               <div className="guidance-note">
                 <IconInfo size={13} />
-                <span>Notice: This prototype does not execute automatic computer-vision pixel classification. You are responsible for verifying that your uploaded image depicts plant foliage.</span>
+                <span>{t('guidanceNotice')}</span>
               </div>
             </div>
 
-            {/* Dropzone Box */}
+            {/* Dropzone Box with Live Scanning Laser Overlay (Feature 1) */}
             <div 
-              className={`dropzone-box ${isDragging ? 'dropzone-dragging' : ''} ${previewUrl ? 'dropzone-has-image' : ''}`}
+              className={`dropzone-box ${isDragging ? 'dropzone-dragging' : ''} ${previewUrl ? 'dropzone-has-image' : ''} ${isAnalyzing ? 'dropzone-analyzing' : ''}`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
               {previewUrl ? (
-                <div className="image-preview-wrapper">
+                <div className="image-preview-wrapper" ref={imagePreviewRef}>
                   <img 
                     src={previewUrl} 
                     alt="Uploaded crop preview" 
-                    className="uploaded-image-preview"
+                    className={`uploaded-image-preview ${isAnalyzing ? 'image-scanning-active' : ''}`}
                   />
-                  <div className="preview-overlay-bar">
-                    <div className="preview-file-details">
-                      <strong className="preview-file-name">{file?.name}</strong>
-                      <span className="preview-file-size">
-                        {file?.size ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : 'Sample Preset'}
-                      </span>
-                    </div>
-                    <div className="preview-actions">
-                      <button 
-                        type="button" 
-                        className="btn-preview-action btn-replace"
-                        onClick={() => fileInputRef.current?.click()}
-                        title="Choose another image"
-                      >
-                        <IconRefresh size={14} />
-                        <span>Replace</span>
-                      </button>
-                      <button 
-                        type="button" 
-                        className="btn-preview-action btn-remove"
-                        onClick={handleRemoveImage}
-                        title="Remove image"
-                      >
-                        <IconTrash size={14} />
-                        <span>Remove</span>
-                      </button>
-                    </div>
+
+                  {/* Corner HUD Reticles & Glowing Laser Scan Line (Feature 1) */}
+                  <div className="scanner-hud-overlay">
+                    <span className="hud-corner hud-top-left"></span>
+                    <span className="hud-corner hud-top-right"></span>
+                    <span className="hud-corner hud-bottom-left"></span>
+                    <span className="hud-corner hud-bottom-right"></span>
+
+                    {/* ONLY animate scanning line when isAnalyzing === true (Zero fake scanning) */}
+                    {isAnalyzing && (
+                      <div className="scanner-laser-container">
+                        <div className="scanner-laser-line"></div>
+                        <div className="scanner-reticle-crosshair"></div>
+                        <div className="scanner-hud-glow"></div>
+                        {/* Cycling Status Messages */}
+                        <div className="scanner-status-pill-animated">
+                          <IconSparkles size={14} className="sparkle-pulse" />
+                          <span>{progressMessages[progressStep]}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {!isAnalyzing && (
+                    <div className="preview-overlay-bar">
+                      <div className="preview-file-details">
+                        <strong className="preview-file-name">{file?.name}</strong>
+                        <span className="preview-file-size">
+                          {file?.size ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : 'Sample Preset'}
+                        </span>
+                      </div>
+                      <div className="preview-actions">
+                        <button 
+                          type="button" 
+                          className="btn-preview-action btn-replace"
+                          onClick={() => fileInputRef.current?.click()}
+                          title={t('dropzoneReplace')}
+                        >
+                          <IconRefresh size={14} />
+                          <span>{t('dropzoneReplace')}</span>
+                        </button>
+                        <button 
+                          type="button" 
+                          className="btn-preview-action btn-remove"
+                          onClick={handleRemoveImage}
+                          title={t('dropzoneRemove')}
+                        >
+                          <IconTrash size={14} />
+                          <span>{t('dropzoneRemove')}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="dropzone-empty-state">
                   <div className="dropzone-icon-circle">
                     <IconUpload size={28} />
                   </div>
-                  <h3 className="dropzone-prompt">Drag & drop crop leaf photo here</h3>
-                  <p className="dropzone-sub">
-                    Supports JPG, JPEG, PNG, WEBP (Max 10 MB)
-                  </p>
+                  <h3 className="dropzone-prompt">{t('dropzoneTitle')}</h3>
+                  <p className="dropzone-sub">{t('dropzoneSub')}</p>
                   <button 
                     type="button" 
                     className="btn-browse-file"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <IconCamera size={16} />
-                    <span>Browse Device Files</span>
+                    <span>{t('dropzoneBrowse')}</span>
                   </button>
                 </div>
               )}
@@ -426,6 +622,37 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               />
             </div>
 
+            {/* Non-Blocking Image Quality Assistance Card (Feature 5) */}
+            {qualityCheck?.hasWarning && !dismissQualityWarning && !isAnalyzing && (
+              <div className="image-quality-alert-card" role="alert">
+                <div className="qa-header">
+                  <IconAlertCircle size={17} className="qa-icon" />
+                  <strong className="qa-title">{t('qualityWarningTitle')}</strong>
+                </div>
+                <div className="qa-body">
+                  {qualityCheck.isDark && <p className="qa-text">• {t('qualityDark')}</p>}
+                  {qualityCheck.isBlurry && <p className="qa-text">• {t('qualityBlurry')}</p>}
+                  {qualityCheck.isLowRes && <p className="qa-text">• {t('qualityLowRes')}</p>}
+                </div>
+                <div className="qa-actions">
+                  <button
+                    type="button"
+                    className="btn-qa-retake"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {t('qualityRetake')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-qa-proceed"
+                    onClick={() => setDismissQualityWarning(true)}
+                  >
+                    {t('qualityProceed')}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Upload Error Banner */}
             {uploadError && (
               <div className="upload-error-box" role="alert">
@@ -436,7 +663,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
 
             {/* Quick Preset Buttons */}
             <div className="preset-samples-box">
-              <span className="preset-heading">Or try tested foliar sample presets:</span>
+              <span className="preset-heading">{t('samplePresetsTitle')}</span>
               <div className="preset-buttons-row">
                 {SAMPLE_PRESET_IMAGES.map((preset) => (
                   <button
@@ -459,14 +686,14 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             <div className="form-group">
               <label className="form-label">
                 <span className="step-num">1</span>
-                <span>Target Crop Species:</span>
+                <span>{t('step1Crop')}</span>
               </label>
               <div className="crop-radio-group">
                 {[
-                  { id: 'potato', label: 'Potato', icon: '🥔' },
-                  { id: 'tomato', label: 'Tomato', icon: '🍅' },
-                  { id: 'rice', label: 'Rice', icon: '🌾' },
-                  { id: 'wheat', label: 'Wheat', icon: '🌱' },
+                  { id: 'potato', label: t('cropPotato'), icon: '🥔' },
+                  { id: 'tomato', label: t('cropTomato'), icon: '🍅' },
+                  { id: 'rice', label: t('cropRice'), icon: '🌾' },
+                  { id: 'wheat', label: t('cropWheat'), icon: '🌱' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -488,36 +715,41 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             <div className="form-group">
               <label className="form-label">
                 <span className="step-num">2</span>
-                <span>Image Subject View (Self-Declared by User):</span>
+                <span>{t('step2Specimen')}</span>
               </label>
               <div className="specimen-select-group">
-                {SPECIMEN_TYPES.map((type) => (
-                  <label 
-                    key={type.id} 
-                    className={`specimen-option-card ${specimenType === type.id ? 'specimen-active' : ''}`}
-                  >
-                    <input 
-                      type="radio" 
-                      name="specimen-type" 
-                      value={type.id} 
-                      checked={specimenType === type.id}
-                      onChange={(e) => setSpecimenType(e.target.value)}
-                      className="specimen-radio-input"
-                    />
-                    <div className="specimen-text-box">
-                      <strong className="specimen-name">{type.label}</strong>
-                      <span className="specimen-desc">{type.description}</span>
-                    </div>
-                  </label>
-                ))}
+                {SPECIMEN_TYPES.map((type) => {
+                  let localizedLabel = type.label;
+                  if (type.id === 'leaf') localizedLabel = t('step2Leaf');
+                  if (type.id === 'harvested_produce') localizedLabel = t('step2Harvested');
+                  if (type.id === 'other') localizedLabel = t('step2Other');
+
+                  return (
+                    <label 
+                      key={type.id} 
+                      className={`specimen-option-card ${specimenType === type.id ? 'specimen-active' : ''}`}
+                    >
+                      <input 
+                        type="radio" 
+                        name="specimen-type" 
+                        value={type.id} 
+                        checked={specimenType === type.id}
+                        onChange={(e) => setSpecimenType(e.target.value)}
+                        className="specimen-radio-input"
+                      />
+                      <div className="specimen-text-box">
+                        <strong className="specimen-name">{localizedLabel}</strong>
+                        <span className="specimen-desc">{type.description}</span>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
 
               {specimenType !== 'leaf' && (
                 <div className="specimen-unsuitable-warning">
                   <IconAlertCircle size={16} />
-                  <span>
-                    <strong>Notice:</strong> Foliar disease screening cannot evaluate harvested produce (e.g. potatoes/tubers) or non-foliar views. If you proceed, the tool will report an unsuitable specimen notice rather than foliar disease candidates.
-                  </span>
+                  <span>{t('specimenUnsuitableWarning')}</span>
                 </div>
               )}
             </div>
@@ -526,11 +758,9 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             <div className="form-group">
               <label className="form-label">
                 <span className="step-num">3</span>
-                <span>Observed Visual Foliar Symptoms (User-Reported):</span>
+                <span>{t('step3Symptoms')}</span>
               </label>
-              <p className="form-hint">
-                Select visual signs you observe on the plant. If no symptoms are visible, you may proceed with an explicit no-symptoms baseline.
-              </p>
+              <p className="form-hint">{t('step3Hint')}</p>
               <div className="symptoms-pill-grid">
                 {SYMPTOM_OPTIONS.map((opt) => {
                   const isChecked = selectedSymptoms.includes(opt.id);
@@ -543,7 +773,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                       aria-pressed={isChecked}
                     >
                       <span className="symptom-icon">{opt.icon}</span>
-                      <span className="symptom-label">{opt.label}</span>
+                      <span className="symptom-label">{getSymptomLabel(opt.id)}</span>
                       {isChecked && <IconCheck size={14} className="symptom-check" />}
                     </button>
                   );
@@ -555,13 +785,13 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             <div className="form-group">
               <label htmlFor="additional-notes" className="form-label">
                 <span className="step-num">4</span>
-                <span>Additional Field Observations (Optional):</span>
+                <span>{t('step4Notes')}</span>
               </label>
               <textarea
                 id="additional-notes"
                 rows="2"
                 className="notes-textarea"
-                placeholder="e.g., Lower canopy affected; symptoms appeared after heavy rain; recent bio-spray applied 3 days ago..."
+                placeholder={t('step4Placeholder')}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
@@ -607,12 +837,12 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                 {isAnalyzing ? (
                   <>
                     <IconRefresh size={18} className="spin-icon" />
-                    <span>Evaluating Symptom Markers...</span>
+                    <span>{progressMessages[progressStep]}</span>
                   </>
                 ) : (
                   <>
                     <IconCamera size={18} />
-                    <span>Evaluate Disease Candidates (Demo)</span>
+                    <span>{t('btnEvaluate')}</span>
                   </>
                 )}
               </button>
@@ -620,8 +850,9 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
           </div>
         </div>
       ) : (
-        /* STRUCTURED RESULTS DISPLAY */
-        <div className="analysis-results-container">
+        /* STRUCTURED 5-SECTION FARMER-FRIENDLY REPORT DISPLAY (Features 2, 6, 9) */
+        <div className="analysis-results-container reveal-smooth">
+          {/* Results Top Header & TTS Read Aloud Control */}
           <div className="results-top-banner">
             <div className="banner-left">
               {analysisResult.isAiInference ? (
@@ -635,272 +866,329 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                 </span>
               )}
               <h3 className="results-main-title">
-                Symptom Evaluation for {analysisResult.cropName}
+                {t('reportHeading')} — {analysisResult.cropName}
               </h3>
               <p className="results-timestamp">Evaluated at: {analysisResult.analyzedAt}</p>
             </div>
-            <button 
-              type="button" 
-              className="btn-analyze-another"
-              onClick={handleReset}
-            >
-              <IconCamera size={16} />
-              <span>Analyze Another Image</span>
-            </button>
-          </div>
 
-          {/* Model-Observed Visual Features Banner (When Genuine Gemini AI Ran) */}
-          {analysisResult.isAiInference && analysisResult.observedVisualFeatures && analysisResult.observedVisualFeatures.length > 0 && (
-            <div className="model-features-banner">
-              <div className="psb-header">
+            <div className="results-top-actions">
+              {/* Feature 6: Web Speech API Listen to Report Button */}
+              {isTtsSupported && (
+                <button
+                  type="button"
+                  className={`btn-tts-listen ${isSpeaking ? 'tts-speaking-active' : ''}`}
+                  onClick={handleToggleSpeech}
+                  title={isSpeaking ? t('stopListening') : t('listenReport')}
+                >
+                  {isSpeaking ? (
+                    <>
+                      <IconVolumeX size={17} />
+                      <span className="tts-pulse-bars">
+                        <span className="bar"></span>
+                        <span className="bar"></span>
+                        <span className="bar"></span>
+                      </span>
+                      <span>{t('stopListening')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <IconVolume size={17} />
+                      <span>{t('listenReport')}</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <button 
+                type="button" 
+                className="btn-analyze-another"
+                onClick={handleReset}
+              >
                 <IconCamera size={16} />
-                <strong className="psb-title">Gemini Model-Observed Visual Features:</strong>
-                <span className="psb-source-tag tag-model">Source: Gemini Multimodal Vision (Pixel Morphology)</span>
-              </div>
-              <ul className="model-features-list">
-                {analysisResult.observedVisualFeatures.map((feat, idx) => (
-                  <li key={idx}>
-                    <span className="feat-bullet">•</span>
-                    <span>{feat}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Prominent Symptom Evidence Banner at Top */}
-          <div className="prominent-symptoms-banner">
-            <div className="psb-header">
-              <IconInfo size={16} />
-              <strong className="psb-title">User-Reported Observable Symptoms:</strong>
-              <span className="psb-source-tag">Source: User Declaration</span>
-            </div>
-            <div className="psb-chips-wrap">
-              {analysisResult.userReportedSymptoms && analysisResult.userReportedSymptoms.length > 0 ? (
-                analysisResult.userReportedSymptoms.map((sym, idx) => (
-                  <span key={idx} className="psb-chip">
-                    {sym}
-                  </span>
-                ))
-              ) : (
-                <div className="psb-no-symptoms-callout">
-                  <span>⚠️ No visible foliar symptoms were selected by the user.</span>
-                </div>
-              )}
+                <span>{t('btnAnalyzeAnother')}</span>
+              </button>
             </div>
           </div>
 
-          {/* Alternative Explanations Banner */}
-          {analysisResult.alternativeExplanations && analysisResult.alternativeExplanations.length > 0 && (
-            <div className="alternative-explanations-box">
-              <div className="alt-header">
-                <IconInfo size={15} />
-                <strong className="alt-title">Alternative Non-Disease or Abiotic Explanations:</strong>
-              </div>
-              <ul className="alt-list">
-                {analysisResult.alternativeExplanations.map((alt, idx) => (
-                  <li key={idx}>
-                    <span className="alt-bullet">ℹ</span>
-                    <span>{alt}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Transparency Disclaimer Box */}
-          <div className="transparency-callout">
-            <IconInfo size={18} className="transparency-icon" />
-            <p className="transparency-text">
-              {analysisResult.transparencyDisclaimer}
-            </p>
-          </div>
-
-          {/* Special Banner for Unsuitable Harvested Produce */}
-          {!analysisResult.isSuitableSpecimen && (
-            <div className="unsuitable-specimen-banner" role="alert">
-              <IconAlertCircle size={22} className="unsuitable-icon" />
-              <div className="unsuitable-text-box">
-                <strong className="unsuitable-title">Specimen Unsuitable for Foliar Disease Screening: {analysisResult.specimenLabel}</strong>
-                <p className="unsuitable-desc">{analysisResult.unsuitabilityNotice}</p>
+          {/* SECTION 1: WHAT WE NOTICED (निरीक्षण) */}
+          <div className="farmer-report-section section-noticed">
+            <div className="frs-header">
+              <span className="frs-number">1</span>
+              <div>
+                <h4 className="frs-title">{t('section1Title')}</h4>
+                <p className="frs-sub">{t('section1Sub')}</p>
               </div>
             </div>
-          )}
 
-          {/* Special Banner when Foliar Leaf uploaded but 0 symptoms reported */}
-          {analysisResult.isSuitableSpecimen && !analysisResult.hasUserSymptoms && (
-            <div className="insufficient-evidence-banner" role="alert">
-              <IconAlertCircle size={22} className="insufficient-icon" />
-              <div className="insufficient-text-box">
-                <strong className="insufficient-title">Insufficient Evidence for Disease Candidate Ranking</strong>
-                <p className="insufficient-desc">
-                  No visible foliar symptoms were selected. Our rule-based matching engine will not invent, assume, or guess disease candidates without reported symptom markers. General preventive crop maintenance is recommended below.
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="results-content-split">
-            {/* Left: Uploaded Photo & User Findings */}
-            <div className="results-evidence-card">
-              <h4 className="evidence-heading">Uploaded Image & Submission Details</h4>
-              <div className="result-image-box">
-                {analysisResult.fileInfo.previewUrl ? (
-                  <img 
-                    src={analysisResult.fileInfo.previewUrl} 
-                    alt={`Submitted ${analysisResult.cropName} specimen`}
-                    className="result-image-img" 
-                  />
-                ) : (
-                  <div className="no-image-placeholder">No image preview available</div>
-                )}
-              </div>
-              <div className="evidence-meta">
-                <div className="meta-row">
-                  <span className="meta-label">File Name:</span>
-                  <span className="meta-val">{analysisResult.fileInfo.name}</span>
+            <div className="frs-grid-split">
+              {/* Submitted Image Preview & Metadata */}
+              <div className="frs-image-card">
+                <div className="result-image-box">
+                  {analysisResult.fileInfo.previewUrl ? (
+                    <img 
+                      src={analysisResult.fileInfo.previewUrl} 
+                      alt={`Submitted ${analysisResult.cropName} specimen`}
+                      className="result-image-img" 
+                    />
+                  ) : (
+                    <div className="no-image-placeholder">No image preview available</div>
+                  )}
                 </div>
-                <div className="meta-row">
-                  <span className="meta-label">File Size:</span>
-                  <span className="meta-val">{analysisResult.fileInfo.sizeFormatted}</span>
-                </div>
-                <div className="meta-row">
-                  <span className="meta-label">Target Crop:</span>
-                  <strong className="meta-val">{analysisResult.cropName}</strong>
-                </div>
-                <div className="meta-row">
-                  <span className="meta-label">Specimen Type:</span>
-                  <span className={`specimen-tag ${analysisResult.isSuitableSpecimen ? 'tag-suitable' : 'tag-unsuitable'}`}>
-                    {analysisResult.specimenLabel}
-                  </span>
-                </div>
-                <div className="meta-row">
-                  <span className="meta-label">Pixel Analysis:</span>
-                  <span className="meta-val meta-note">Not processed by AI vision</span>
-                </div>
-              </div>
-
-              {analysisResult.userNotes && analysisResult.userNotes !== 'None provided' && (
-                <div className="evidence-notes-section">
-                  <span className="notes-label">Farmer Observation:</span>
-                  <p className="notes-body">"{analysisResult.userNotes}"</p>
-                </div>
-              )}
-            </div>
-
-            {/* Right: Disease Candidates, Severity, and Next Steps */}
-            <div className="results-diagnostic-card">
-              {/* Severity Estimate Banner */}
-              <div className="severity-banner">
-                <IconShieldAlert size={20} className="severity-icon" />
-                <div>
-                  <strong className="severity-level">{analysisResult.severityEstimate.level}</strong>
-                  <p className="severity-desc">{analysisResult.severityEstimate.description}</p>
-                </div>
-              </div>
-
-              {/* Disease Candidates List (ONLY rendered when candidates exist!) */}
-              {analysisResult.candidates && analysisResult.candidates.length > 0 ? (
-                <div className="candidates-list-block">
-                  <div className="candidates-title-box">
-                    <h4 className="block-title">
-                      Rule-Assisted Possibilities for {analysisResult.cropName} (Based on User Symptoms):
-                    </h4>
-                    <span className="block-sub">
-                      Agronomic pattern matches correlated with your selected symptoms. These are exploratory possibilities for field scouting, NOT confirmed or image-detected diagnoses.
+                <div className="evidence-meta">
+                  <div className="meta-row">
+                    <span className="meta-label">Specimen:</span>
+                    <span className={`specimen-tag ${analysisResult.isSuitableSpecimen ? 'tag-suitable' : 'tag-unsuitable'}`}>
+                      {analysisResult.specimenLabel}
                     </span>
                   </div>
-
-                  <div className="candidates-grid">
-                    {analysisResult.candidates.map((cand, idx) => (
-                      <div key={idx} className="candidate-card">
-                        <div className="candidate-header">
-                          <div>
-                            <h5 className="candidate-name">{cand.name}</h5>
-                            <span className="candidate-pathogen">{cand.pathogenType}</span>
-                          </div>
-                          <span className={`candidate-tag ${cand.matchScore >= 2 ? 'tag-primary' : 'tag-secondary'}`}>
-                            {cand.likelihoodTag}
-                          </span>
-                        </div>
-                        
-                        <div className="candidate-details">
-                          {cand.matchedSymptoms && cand.matchedSymptoms.length > 0 && (
-                            <div className="detail-item matched-symptoms-item">
-                              <span className="item-label">Correlated User Symptoms:</span>
-                              <div className="matched-symptoms-chips">
-                                {cand.matchedSymptoms.map((ms, i) => (
-                                  <span key={i} className="matched-chip">✓ {ms}</span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <div className="detail-item">
-                            <span className="item-label">Supporting Visual Signs:</span>
-                            <p className="item-text">{cand.supportingVisualSigns}</p>
-                          </div>
-                          <div className="detail-item">
-                            <span className="item-label">Distinguishing Characteristics:</span>
-                            <p className="item-text">{cand.distinguishingCharacteristics}</p>
-                          </div>
-                          <div className="detail-item">
-                            <span className="item-label">Favorable Microclimate:</span>
-                            <p className="item-text">{cand.favorableConditions}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="meta-row">
+                    <span className="meta-label">Target Crop:</span>
+                    <strong className="meta-val">{analysisResult.cropName}</strong>
                   </div>
                 </div>
-              ) : (
-                <div className="no-candidates-card">
-                  <h4 className="no-cand-title">No Candidate Disease Ranking Available</h4>
-                  <p className="no-cand-desc">
-                    {!analysisResult.isSuitableSpecimen
-                      ? 'Foliar disease pattern matching requires living foliage. Please upload a clear photo of an affected leaf to inspect candidate diseases.'
-                      : 'Because no foliar symptoms were selected, no disease candidates were matched. If symptoms are present on your crop, re-evaluate and select the observed signs.'}
-                  </p>
+              </div>
+
+              {/* Observed Findings Detail */}
+              <div className="frs-findings-card">
+                <strong className="findings-heading">{t('section1Symptoms')}</strong>
+                <div className="psb-chips-wrap">
+                  {analysisResult.userReportedSymptoms && analysisResult.userReportedSymptoms.length > 0 ? (
+                    analysisResult.userReportedSymptoms.map((sym, idx) => (
+                      <span key={idx} className="psb-chip">
+                        ✓ {sym}
+                      </span>
+                    ))
+                  ) : (
+                    <div className="psb-no-symptoms-callout">
+                      <span>⚠️ {t('section1NoSymptoms')}</span>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {/* Uncertainty & Abiotic Confounding Factors */}
-              <div className="uncertainty-block">
-                <h4 className="uncertainty-title">Diagnostic Uncertainty & Abiotic Mimics</h4>
-                <ul className="uncertainty-list">
-                  {analysisResult.uncertaintyFactors.map((factor, idx) => (
-                    <li key={idx}>{factor}</li>
-                  ))}
-                </ul>
+                {/* Model-Observed Visual Features (When Genuine Gemini AI Ran) */}
+                {analysisResult.isAiInference && analysisResult.observedVisualFeatures && analysisResult.observedVisualFeatures.length > 0 && (
+                  <div className="model-features-inner">
+                    <strong className="findings-heading model-heading">
+                      <IconSparkles size={14} />
+                      <span>{t('section1VisualFeatures')}</span>
+                    </strong>
+                    <ul className="model-features-list">
+                      {analysisResult.observedVisualFeatures.map((feat, idx) => (
+                        <li key={idx}>
+                          <span className="feat-bullet">•</span>
+                          <span>{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Farmer Observation note */}
+                {analysisResult.userNotes && analysisResult.userNotes !== 'None provided' && (
+                  <div className="farmer-note-callout">
+                    <span className="notes-label">Farmer Observation:</span>
+                    <p className="notes-body">"{analysisResult.userNotes}"</p>
+                  </div>
+                )}
               </div>
+            </div>
+          </div>
 
-              {/* Recommended Practical Crop-Care Next Steps */}
-              <div className="next-steps-block">
-                <h4 className="next-steps-title">Recommended Cautious Field Next Steps</h4>
-                <ul className="steps-list">
-                  {analysisResult.recommendedNextSteps.map((step, idx) => (
-                    <li key={idx}>
-                      <span className="step-bullet">✓</span>
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ul>
+          {/* SECTION 2: WHAT IT MIGHT MEAN (संभाव्य कारण) */}
+          <div className="farmer-report-section section-meaning">
+            <div className="frs-header">
+              <span className="frs-number">2</span>
+              <div>
+                <h4 className="frs-title">{t('section2Title')}</h4>
+                <p className="frs-sub">{t('section2Sub')}</p>
               </div>
+            </div>
 
-              {/* Agricultural Expert Consultation Box */}
-              <div className="expert-consult-box">
-                <h4 className="expert-title">When to Consult an Agricultural Pathologist</h4>
-                <p className="expert-text">
-                  {analysisResult.expertConsultationGuidance.recommendation}
+            {/* Special Banner for Unsuitable Harvested Produce */}
+            {!analysisResult.isSuitableSpecimen && (
+              <div className="unsuitable-specimen-banner" role="alert">
+                <IconAlertCircle size={22} className="unsuitable-icon" />
+                <div className="unsuitable-text-box">
+                  <strong className="unsuitable-title">Specimen Unsuitable for Foliar Disease Screening: {analysisResult.specimenLabel}</strong>
+                  <p className="unsuitable-desc">{analysisResult.unsuitabilityNotice}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Disease Candidates List */}
+            {analysisResult.candidates && analysisResult.candidates.length > 0 ? (
+              <div className="candidates-grid">
+                {analysisResult.candidates.map((cand, idx) => (
+                  <div key={idx} className="candidate-card">
+                    <div className="candidate-header">
+                      <div>
+                        <h5 className="candidate-name">{cand.name}</h5>
+                        <span className="candidate-pathogen">{cand.pathogenType}</span>
+                      </div>
+                      <span className={`candidate-tag ${cand.matchScore >= 2 ? 'tag-primary' : 'tag-secondary'}`}>
+                        {cand.likelihoodTag}
+                      </span>
+                    </div>
+                    
+                    <div className="candidate-details">
+                      {cand.matchedSymptoms && cand.matchedSymptoms.length > 0 && (
+                        <div className="detail-item matched-symptoms-item">
+                          <span className="item-label">Matched Foliar Signs:</span>
+                          <div className="matched-symptoms-chips">
+                            {cand.matchedSymptoms.map((ms, i) => (
+                              <span key={i} className="matched-chip">✓ {ms}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="detail-item">
+                        <span className="item-label">{t('section2Description')}</span>
+                        <p className="item-text">{cand.supportingVisualSigns}</p>
+                      </div>
+                      <div className="detail-item">
+                        <span className="item-label">Distinguishing Characteristics:</span>
+                        <p className="item-text">{cand.distinguishingCharacteristics}</p>
+                      </div>
+                      <div className="detail-item">
+                        <span className="item-label">Favorable Microclimate:</span>
+                        <p className="item-text">{cand.favorableConditions}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="no-candidates-card">
+                <h5 className="no-cand-title">No Candidate Disease Ranking Available</h5>
+                <p className="no-cand-desc">
+                  {!analysisResult.isSuitableSpecimen
+                    ? t('section2UnsuitableNotice')
+                    : t('section2NoCandidates')}
                 </p>
-                <div className="expert-contact-badge">
-                  <span>Helpline:</span>
-                  <strong>{analysisResult.expertConsultationGuidance.contactChannels}</strong>
+              </div>
+            )}
+          </div>
+
+          {/* SECTION 3: WHAT YOU CAN DO NOW (तातडीने काय करावे) */}
+          <div className="farmer-report-section section-action-now">
+            <div className="frs-header">
+              <span className="frs-number">3</span>
+              <div>
+                <h4 className="frs-title">{t('section3Title')}</h4>
+                <p className="frs-sub">{t('section3Sub')}</p>
+              </div>
+            </div>
+
+            <div className="action-cards-grid">
+              <div className="action-card">
+                <div className="action-card-header">
+                  <span className="action-icon-pill pill-blue">💧</span>
+                  <strong>Irrigation Management</strong>
                 </div>
+                <p className="action-card-text">{t('actionStopWatering')}</p>
+              </div>
+
+              <div className="action-card">
+                <div className="action-card-header">
+                  <span className="action-icon-pill pill-red">✂️</span>
+                  <strong>Sanitation & Pruning</strong>
+                </div>
+                <p className="action-card-text">{t('actionPruneLeaves')}</p>
+              </div>
+
+              <div className="action-card">
+                <div className="action-card-header">
+                  <span className="action-icon-pill pill-amber">🧼</span>
+                  <strong>Tool Sterilization</strong>
+                </div>
+                <p className="action-card-text">{t('actionSanitizeTools')}</p>
+              </div>
+
+              <div className="action-card">
+                <div className="action-card-header">
+                  <span className="action-icon-pill pill-green">🌬️</span>
+                  <strong>Canopy Aeration</strong>
+                </div>
+                <p className="action-card-text">{t('actionImproveAeration')}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: WHAT TO CHECK NEXT (पुढे काय तपासावे) */}
+          <div className="farmer-report-section section-check-next">
+            <div className="frs-header">
+              <span className="frs-number">4</span>
+              <div>
+                <h4 className="frs-title">{t('section4Title')}</h4>
+                <p className="frs-sub">{t('section4Sub')}</p>
+              </div>
+            </div>
+
+            <div className="checkpoints-list">
+              <div className="checkpoint-row">
+                <div className="cp-badge">🌅 Dawn Check</div>
+                <div className="cp-desc">
+                  <strong>Leaf Underside Inspection:</strong> {t('checkUndersides')}
+                </div>
+              </div>
+              <div className="checkpoint-row">
+                <div className="cp-badge">💨 Wind Vector</div>
+                <div className="cp-desc">
+                  <strong>Downwind Canopy Scouting:</strong> {t('checkDownwind')}
+                </div>
+              </div>
+              <div className="checkpoint-row">
+                <div className="cp-badge">⏱️ Wetness Hours</div>
+                <div className="cp-desc">
+                  <strong>Morning Dew Persistence:</strong> {t('checkDewDuration')}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 5: WHEN TO GET HELP (मदत कधी घ्यावी) */}
+          <div className="farmer-report-section section-get-help">
+            <div className="frs-header">
+              <span className="frs-number">5</span>
+              <div>
+                <h4 className="frs-title">{t('section5Title')}</h4>
+                <p className="frs-sub">{t('section5Sub')}</p>
+              </div>
+            </div>
+
+            <div className="escalation-box">
+              <strong className="escalation-title">Field Escalation Triggers (Call Extension Officers If):</strong>
+              <ul className="escalation-list">
+                <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger1')}</li>
+                <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger2')}</li>
+                <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger3')}</li>
+              </ul>
+            </div>
+
+            {/* Official KVK & Expert Consultation Notice (Preserves scientific safety rule) */}
+            <div className="expert-kvk-banner">
+              <div className="kvk-top">
+                <IconShieldAlert size={22} className="kvk-icon" />
+                <div>
+                  <strong className="kvk-heading">Certified Agricultural Advisory Notice:</strong>
+                  <p className="kvk-p">{t('kvkNotice')}</p>
+                </div>
+              </div>
+              <div className="kvk-phone-badge">
+                <span>📞</span>
+                <strong>{t('kvkHelpline')}</strong>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Slide-out Scan History Drawer (Feature 8) */}
+      <ScanHistoryDrawer 
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectScan={handleLoadPastScan}
+      />
     </section>
   );
 }

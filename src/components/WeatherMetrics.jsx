@@ -11,6 +11,7 @@ import {
   IconAlertCircle,
   IconWifiOff
 } from './Icons';
+import { useApp } from '../context/useApp';
 
 export default function WeatherMetrics({ 
   weather, 
@@ -20,6 +21,8 @@ export default function WeatherMetrics({
   onRetry,
   locationName 
 }) {
+  const { t } = useApp();
+
   // Determine if using live API data or fallback
   const isLive = Boolean(liveWeather && !apiError);
   
@@ -46,17 +49,17 @@ export default function WeatherMetrics({
         <div>
           <div className="title-with-pill">
             <h2 id="weather-metrics-heading" className="section-title">
-              Atmospheric Weather & Micro-Climate Telemetry
+              {t('weatherTitle')}
             </h2>
             {isLive ? (
               <span className="live-api-tag" title="Connected to Open-Meteo Forecast API">
                 <span className="live-ping-dot"></span>
-                Live Open-Meteo Feed
+                {t('weatherLiveTag')}
               </span>
             ) : (
               <span className="sample-data-badge">
                 <IconInfo size={13} />
-                <span>Simulated Sensor Baseline</span>
+                <span>{t('weatherSimulatedTag')}</span>
               </span>
             )}
           </div>
@@ -80,7 +83,7 @@ export default function WeatherMetrics({
             title="Fetch latest forecast from Open-Meteo"
           >
             <IconRefresh size={14} className={isLoading ? 'spin-icon' : ''} />
-            <span>{isLoading ? 'Updating...' : 'Refresh Feed'}</span>
+            <span>{isLoading ? t('loading') : t('retry')}</span>
           </button>
         </div>
       </div>
@@ -104,7 +107,7 @@ export default function WeatherMetrics({
             disabled={isLoading}
           >
             <IconRefresh size={14} className={isLoading ? 'spin-icon' : ''} />
-            <span>Retry Connection</span>
+            <span>{t('retry')}</span>
           </button>
         </div>
       )}
@@ -122,7 +125,7 @@ export default function WeatherMetrics({
         {/* Temperature Card */}
         <div className="metric-card metric-card-temp">
           <div className="metric-top">
-            <span className="metric-label">Ambient Temperature</span>
+            <span className="metric-label">{t('weatherTemp')}</span>
             <div className="metric-icon-circle icon-temp">
               <IconThermometer size={20} />
             </div>
@@ -149,7 +152,7 @@ export default function WeatherMetrics({
         {/* Relative Humidity Card */}
         <div className={`metric-card metric-card-humidity ${isHighHumidity ? 'metric-card-alert' : ''}`}>
           <div className="metric-top">
-            <span className="metric-label">Relative Humidity</span>
+            <span className="metric-label">{t('weatherHumidity')}</span>
             <div className="metric-icon-circle icon-humidity">
               <IconDroplets size={20} />
             </div>
@@ -173,7 +176,7 @@ export default function WeatherMetrics({
         {/* Precipitation Card */}
         <div className="metric-card metric-card-rain">
           <div className="metric-top">
-            <span className="metric-label">Precipitation (Current / Rain)</span>
+            <span className="metric-label">{t('weatherRainfall')}</span>
             <div className="metric-icon-circle icon-rain">
               <IconCloudRain size={20} />
             </div>
@@ -197,7 +200,7 @@ export default function WeatherMetrics({
         {/* Wind Speed Card */}
         <div className="metric-card metric-card-wind">
           <div className="metric-top">
-            <span className="metric-label">Wind Speed & Vector</span>
+            <span className="metric-label">{t('weatherWind')}</span>
             <div className="metric-icon-circle icon-wind">
               <IconWind size={20} />
             </div>
@@ -225,10 +228,10 @@ export default function WeatherMetrics({
           <div className="hourly-header">
             <div className="hourly-title-box">
               <IconClock size={16} />
-              <h3 className="hourly-title">24-Hour Micro-Climate Hourly Trajectory</h3>
+              <h3 className="hourly-title">{t('weatherHourlyHeading')}</h3>
             </div>
             <span className="hourly-subtitle">
-              Monitor nighttime RH spikes (&gt;80%) that drive leaf wetness and fungal spore incubation.
+              {t('weatherHourlySub')}
             </span>
           </div>
 
@@ -301,7 +304,7 @@ export default function WeatherMetrics({
         </div>
         <div className="micro-strip-divider">|</div>
         <div className="micro-strip-item">
-          <span className="strip-label">Surface Pressure:</span>
+          <span className="strip-label">{t('weatherPressure')}:</span>
           <strong className="strip-value">{currentPressure} hPa</strong>
         </div>
         {isLive && (

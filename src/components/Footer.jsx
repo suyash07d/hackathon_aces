@@ -1,7 +1,10 @@
 import React from 'react';
 import { IconCloudRain, IconLeaf } from './Icons';
+import { useApp } from '../context/useApp';
 
 export default function Footer() {
+  const { t } = useApp();
+
   const scrollTo = (id) => {
     const element = document.getElementById(id);
     if (element) {
@@ -33,11 +36,11 @@ export default function Footer() {
                 <IconLeaf size={12} className="footer-leaf-icon" />
               </div>
               <span className="footer-brand-name">
-                Rain Maker<span className="gold-dot">.</span>
+                {t('appName')}<span className="gold-dot">.</span>
               </span>
             </div>
             <p className="footer-mission">
-              Micro-Climatic Crop Disease Early Warning System. Empowering farmers and extension specialists with predictive bio-meteorological infection telemetry and multimodal leaf vision.
+              {t('footerMission')}
             </p>
             <div className="footer-badge-strip">
               <span className="footer-tech-pill">Open-Meteo Forecast API</span>
@@ -52,79 +55,55 @@ export default function Footer() {
             <ul className="footer-links-list">
               <li>
                 <button type="button" onClick={() => scrollTo('weather')} className="footer-link-btn">
-                  Microclimate Telemetry
+                  {t('navMicroclimate')}
                 </button>
               </li>
               <li>
                 <button type="button" onClick={() => scrollTo('risk')} className="footer-link-btn">
-                  Bio-Meteorological Risk Engine
+                  {t('navRiskEngine')}
                 </button>
               </li>
               <li>
                 <button type="button" onClick={() => scrollTo('scanner')} className="footer-link-btn">
-                  AI Foliar Symptom Scanner
+                  {t('navScanner')}
                 </button>
               </li>
               <li>
                 <button type="button" onClick={() => scrollTo('synthesis')} className="footer-link-btn">
-                  Cross-Evidence Synthesis
+                  {t('navSynthesis')}
                 </button>
               </li>
               <li>
                 <button type="button" onClick={() => scrollTo('advisories')} className="footer-link-btn">
-                  Field Advisories & Action Plans
+                  {t('navAdvisories')}
                 </button>
               </li>
             </ul>
           </div>
 
-          {/* Supported Indian Crops & Zones */}
+          {/* Agricultural Extension Contacts */}
           <div className="footer-nav-col">
-            <h4 className="footer-col-title">Monitored Agro-Climatic Zones</h4>
-            <ul className="footer-info-list">
-              <li>
-                <strong>Nashik Plot, Maharashtra</strong>
-                <span>Potato & Tomato (Kharif/Rabi)</span>
-              </li>
-              <li>
-                <strong>Agra Belt, Uttar Pradesh</strong>
-                <span>Potato Late Blight Sentinels</span>
-              </li>
-              <li>
-                <strong>Burdwan Rice Bowl, West Bengal</strong>
-                <span>Rice Blast & Sheath Blight</span>
-              </li>
-              <li>
-                <strong>Karnal Tract, Haryana</strong>
-                <span>Wheat Rust Surveillance</span>
-              </li>
-            </ul>
-          </div>
-
-          {/* Extension & Emergency Escalation */}
-          <div className="footer-nav-col">
-            <h4 className="footer-col-title">Extension Support</h4>
-            <div className="footer-kvk-box">
-              <strong className="footer-kvk-title">Kisan Call Centre (KCC)</strong>
-              <p className="footer-kvk-phone">Toll-Free: 1800-180-1551</p>
-              <p className="footer-kvk-desc">
-                For laboratory verification of suspected foliar blights, visit your district Krishi Vigyan Kendra (KVK) with a sealed fresh leaf sample.
-              </p>
+            <h4 className="footer-col-title">Agricultural Support</h4>
+            <div className="footer-contact-block">
+              <span className="contact-label">Kisan Call Center (KCC):</span>
+              <strong className="contact-val">1800-180-1551</strong>
+              <span className="contact-hint">Toll-Free (All Indian States)</span>
+            </div>
+            <div className="footer-contact-block">
+              <span className="contact-label">Research Standards:</span>
+              <span className="contact-val">Indian Council of Agricultural Research (ICAR)</span>
             </div>
           </div>
         </div>
 
-        {/* Divider */}
-        <div className="footer-divider"></div>
-
-        {/* Bottom Bar */}
+        {/* Bottom Copyright & Disclaimer */}
         <div className="footer-bottom-row">
           <p className="footer-copyright">
-            © 2026 Rain Maker AgriTech. Built for the Agricultural Innovation Hackathon.
+            {t('footerCopyright')}
           </p>
-          <p className="footer-disclaimer-note">
-            Disclaimer: AI vision observations and atmospheric risk indexes provide decision-support guidance. They do not constitute certified laboratory diagnostics or chemical pesticide prescriptions.
-          </p>
+          <span className="footer-arch-tag">
+            Production Vercel Serverless Ready • Built with Vite & React 19
+          </span>
         </div>
       </div>
     </footer>

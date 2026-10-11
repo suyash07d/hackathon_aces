@@ -7,15 +7,23 @@ import {
   IconMenu, 
   IconX, 
   IconChevronDown,
-  IconSparkles
+  IconSparkles,
+  IconSun,
+  IconMoon,
+  IconHistory,
+  IconGlobe
 } from './Icons';
+import { useApp } from '../context/useApp';
+import { SUPPORTED_LANGUAGES } from '../i18n/translations';
 
 export default function Navbar({ 
   locations = [], 
   selectedLocationId, 
   onSelectLocation,
-  backendAiStatus = { isOnline: false, geminiConfigured: false }
+  backendAiStatus = { isOnline: false, geminiConfigured: false },
+  onOpenHistory
 }) {
+  const { language, setLanguage, theme, toggleTheme, t } = useApp();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
@@ -66,12 +74,12 @@ export default function Navbar({
   };
 
   const navLinks = [
-    { id: 'weather', label: 'Microclimate' },
-    { id: 'risk', label: 'Risk Engine' },
-    { id: 'scanner', label: 'AI Vision Scanner' },
-    { id: 'synthesis', label: 'Cross-Evidence' },
-    { id: 'advisories', label: 'Advisories' },
-    { id: 'how-it-works', label: 'How It Works' },
+    { id: 'weather', label: t('navMicroclimate') },
+    { id: 'risk', label: t('navRiskEngine') },
+    { id: 'scanner', label: t('navScanner') },
+    { id: 'synthesis', label: t('navSynthesis') },
+    { id: 'advisories', label: t('navAdvisories') },
+    { id: 'how-it-works', label: t('navHowItWorks') },
   ];
 
   return (
@@ -93,9 +101,9 @@ export default function Navbar({
             </div>
             <div className="navbar-brand-text">
               <span className="navbar-brand-title">
-                Rain Maker<span className="gold-dot">.</span>
+                {t('appName')}<span className="gold-dot">.</span>
               </span>
-              <span className="navbar-brand-tagline">AgriTech Sentinel</span>
+              <span className="navbar-brand-tagline">{t('appTagline')}</span>
             </div>
           </a>
 
@@ -115,6 +123,51 @@ export default function Navbar({
 
           {/* Right Action Cluster */}
           <div className="navbar-actions">
+            {/* Language Selector Dropdown (Feature 3) */}
+            <div className="navbar-lang-picker" title={t('language')}>
+              <IconGlobe size={14} className="lang-icon" />
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="navbar-lang-select"
+                aria-label={t('language')}
+              >
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.nativeLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Accessible Dark / Light Mode Toggle Button (Feature 4) */}
+            <button
+              type="button"
+              className="navbar-theme-toggle"
+              onClick={toggleTheme}
+              title={theme === 'dark' ? t('themeLight') : t('themeDark')}
+              aria-label={t('toggleTheme')}
+            >
+              {theme === 'dark' ? (
+                <IconSun size={17} className="theme-icon sun-icon" />
+              ) : (
+                <IconMoon size={17} className="theme-icon moon-icon" />
+              )}
+            </button>
+
+            {/* Scan History Trigger (Feature 8) */}
+            {onOpenHistory && (
+              <button
+                type="button"
+                className="navbar-history-btn"
+                onClick={onOpenHistory}
+                title={t('navScanHistory')}
+                aria-label={t('navScanHistory')}
+              >
+                <IconHistory size={16} />
+              </button>
+            )}
+
             {/* Live AI Status Pill */}
             <div 
               className={`navbar-status-pill ${
@@ -133,10 +186,10 @@ export default function Navbar({
                 {backendAiStatus.isOnline && backendAiStatus.geminiConfigured ? (
                   <>
                     <IconSparkles size={11} className="sparkle-icon" />
-                    <span>Gemini 3.5 AI</span>
+                    <span>Gemini 3.5</span>
                   </>
                 ) : (
-                  <span>Sentinel Heuristics</span>
+                  <span>{t('aiHeuristics')}</span>
                 )}
               </span>
             </div>
@@ -168,7 +221,7 @@ export default function Navbar({
               onClick={() => scrollTo('scanner')}
             >
               <IconCamera size={16} />
-              <span>Scan Foliage</span>
+              <span>{t('scanFoliage')}</span>
             </button>
 
             {/* Mobile Hamburger Toggle */}
@@ -189,10 +242,40 @@ export default function Navbar({
       {isMobileMenuOpen && (
         <div className="navbar-mobile-menu" role="dialog" aria-modal="true">
           <div className="mobile-menu-inner">
+            {/* Mobile Language and Theme Row */}
+            <div className="mobile-utility-strip">
+              <div className="mobile-lang-row">
+                <span className="mobile-util-label">{t('language')}:</span>
+                <div className="mobile-lang-buttons">
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <button
+                      key={lang.code}
+                      type="button"
+                      className={`mobile-lang-btn ${language === lang.code ? 'lang-active' : ''}`}
+                      onClick={() => setLanguage(lang.code)}
+                    >
+                      {lang.nativeLabel}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mobile-theme-row">
+                <button
+                  type="button"
+                  className="mobile-theme-btn"
+                  onClick={toggleTheme}
+                >
+                  {theme === 'dark' ? <IconSun size={17} /> : <IconMoon size={17} />}
+                  <span>{theme === 'dark' ? t('themeLight') : t('themeDark')}</span>
+                </button>
+              </div>
+            </div>
+
             <div className="mobile-menu-station">
               <label className="mobile-station-label">
                 <IconMapPin size={14} />
-                <span>Monitored Agri Zone:</span>
+                <span>{t('monitoredZone')}</span>
               </label>
               <select
                 value={selectedLocationId}
@@ -229,7 +312,7 @@ export default function Navbar({
               onClick={() => scrollTo('scanner')}
             >
               <IconCamera size={18} />
-              <span>Launch AI Crop Scanner</span>
+              <span>{t('launchScanner')}</span>
             </button>
           </div>
         </div>

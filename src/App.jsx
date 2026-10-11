@@ -9,11 +9,13 @@ import AdvisorySection from './components/AdvisorySection';
 import HowItWorksSection from './components/HowItWorksSection';
 import Footer from './components/Footer';
 import DisclaimerBanner from './components/DisclaimerBanner';
+import ScanHistoryDrawer from './components/ScanHistoryDrawer';
 import { fetchOpenMeteoWeather } from './services/weatherService';
 import { estimateDiseaseRisk } from './services/diseaseRiskEngine.js';
 import { generateFarmerAdvisories } from './services/advisoryService.js';
 import { checkBackendAiStatus } from './services/imageAnalysisService.js';
 import { useScrollReveal } from './hooks/useScrollReveal';
+import { useApp } from './context/useApp';
 import { 
   SAMPLE_LOCATIONS, 
   SAMPLE_CROPS 
@@ -22,6 +24,7 @@ import { IconMapPin, IconActivity, IconCloudRain, IconShieldAlert, IconCamera, I
 import './App.css';
 
 function App() {
+  const { t } = useApp();
   const [selectedLocationId, setSelectedLocationId] = useState('loc-1');
   const [selectedCropId, setSelectedCropId] = useState('potato');
 
@@ -32,6 +35,9 @@ function App() {
 
   // Crop image analysis state (shared across system)
   const [imageAnalysisResult, setImageAnalysisResult] = useState(null);
+
+  // Global scan history drawer open state (accessible via Navbar or Scanner)
+  const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
 
   // Live Backend AI connectivity status
   const [backendAiStatus, setBackendAiStatus] = useState({ 
@@ -126,6 +132,27 @@ function App() {
     });
   }, [activeCropRiskAssessment, liveWeather, activeCrop.name, imageAnalysisResult]);
 
+  // Handler for selecting past scan from history drawer
+  const handleSelectPastScan = useCallback((pastResult) => {
+    if (!pastResult) return;
+    setImageAnalysisResult(pastResult);
+    if (pastResult.cropId) {
+      setSelectedCropId(pastResult.cropId);
+    }
+    // Scroll down to the scanner report
+    const scannerEl = document.getElementById('scanner');
+    if (scannerEl) {
+      const offset = 80;
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = scannerEl.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      window.scrollTo({
+        top: elementPosition - offset,
+        behavior: 'smooth'
+      });
+    }
+  }, []);
+
   return (
     <div className="saas-app-layout">
       {/* 1. Transparent / Glass-Effect Sticky Navbar */}
@@ -134,6 +161,7 @@ function App() {
         selectedLocationId={selectedLocationId}
         onSelectLocation={setSelectedLocationId}
         backendAiStatus={backendAiStatus}
+        onOpenHistory={() => setIsHistoryDrawerOpen(true)}
       />
 
       {/* 2. Full-Screen Cinematic Hero Section */}
@@ -156,13 +184,13 @@ function App() {
             <div className="saas-section-header reveal-on-scroll">
               <div className="section-badge-pill pill-blue">
                 <IconCloudRain size={13} />
-                <span>ATMOSPHERIC TELEMETRY</span>
+                <span>{t('weatherBadge')}</span>
               </div>
               <h2 id="weather-section-heading" className="saas-section-title">
-                Micro-Climatic Observations & Environmental Vectors
+                {t('weatherTitle')}
               </h2>
               <p className="saas-section-subtitle">
-                Real-time regional telemetry ingested from Open-Meteo for <strong>{activeLocation.name}</strong> ({activeLocation.state}). Tracks air temperature, relative humidity, and precipitation thresholds essential for fungal spore germination.
+                {t('weatherSubtitle', { location: activeLocation.name, state: activeLocation.state })}
               </p>
             </div>
 
@@ -170,7 +198,7 @@ function App() {
             <div className="section-location-bar reveal-on-scroll">
               <div className="slb-left">
                 <IconMapPin size={16} className="slb-icon" />
-                <span className="slb-label">Switch Monitored Farm Station:</span>
+                <span className="slb-label">{t('switchStation')}</span>
               </div>
               <div className="slb-pills">
                 {SAMPLE_LOCATIONS.map((loc) => (
@@ -206,13 +234,13 @@ function App() {
             <div className="saas-section-header reveal-on-scroll">
               <div className="section-badge-pill pill-gold">
                 <IconShieldAlert size={13} />
-                <span>BIO-METEOROLOGICAL EPIDEMIOLOGY</span>
+                <span>{t('riskBadge')}</span>
               </div>
               <h2 id="risk-section-heading" className="saas-section-title">
-                Crop-Specific Disease Risk Engine
+                {t('riskTitle')}
               </h2>
               <p className="saas-section-subtitle">
-                Algorithmic pathogen incubation assessment modeling prolonged leaf wetness, nocturnal humidity saturation, and fungal spore thresholds across major staple crops.
+                {t('riskSubtitle')}
               </p>
             </div>
 
@@ -235,13 +263,13 @@ function App() {
             <div className="saas-section-header reveal-on-scroll">
               <div className="section-badge-pill pill-green">
                 <IconCamera size={13} />
-                <span>MULTIMODAL COMPUTER VISION</span>
+                <span>{t('scannerBadge')}</span>
               </div>
               <h2 id="scanner-section-heading" className="saas-section-title">
-                AI Crop Foliar Symptom Analyzer
+                {t('scannerTitle')}
               </h2>
               <p className="saas-section-subtitle">
-                Upload a field photograph of an affected crop leaf. Powered by Google Gemini 3.5 Flash multimodal vision with transparent client-side heuristic fallback and specimen suitability screening.
+                {t('scannerSubtitle')}
               </p>
             </div>
 
@@ -261,13 +289,13 @@ function App() {
             <div className="saas-section-header reveal-on-scroll">
               <div className="section-badge-pill pill-indigo">
                 <IconActivity size={13} />
-                <span>MULTI-FACTOR CORRELATION</span>
+                <span>{t('crossEvidenceBadge')}</span>
               </div>
               <h2 id="synthesis-section-heading" className="saas-section-title">
-                Cross-Evidence Synthesis Sentinel
+                {t('crossEvidenceTitle')}
               </h2>
               <p className="saas-section-subtitle">
-                Synthesizes pre-symptomatic atmospheric incubation telemetry with observed foliar lesion evidence to calibrate overall infection probability and distinguish abiotic stresses.
+                {t('crossEvidenceSubtitle')}
               </p>
             </div>
 
@@ -288,13 +316,13 @@ function App() {
             <div className="saas-section-header reveal-on-scroll">
               <div className="section-badge-pill pill-emerald">
                 <IconInfo size={13} />
-                <span>ACTIONABLE DECISION SUPPORT</span>
+                <span>{t('advisoriesBadge')}</span>
               </div>
               <h2 id="advisories-section-heading" className="saas-section-title">
-                Preventive Field Advisories & Agronomic Guidance
+                {t('advisoriesTitle')}
               </h2>
               <p className="saas-section-subtitle">
-                Prioritized cultural interventions, irrigation adjustments, and certified Krishi Vigyan Kendra (KVK) extension referrals to protect smallholder yields.
+                {t('advisoriesSubtitle')}
               </p>
             </div>
 
@@ -314,6 +342,13 @@ function App() {
 
       {/* 5. Deep Forest Green SaaS Footer */}
       <Footer />
+
+      {/* Global Scan History Drawer (Feature 8) */}
+      <ScanHistoryDrawer 
+        isOpen={isHistoryDrawerOpen}
+        onClose={() => setIsHistoryDrawerOpen(false)}
+        onSelectScan={handleSelectPastScan}
+      />
     </div>
   );
 }

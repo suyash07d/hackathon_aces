@@ -10,6 +10,7 @@ import {
   IconLeaf
 } from './Icons';
 import { useAnimatedCounter } from '../hooks/useAnimatedCounter';
+import { useApp } from '../context/useApp';
 
 export default function HeroSection({
   activeLocation,
@@ -18,6 +19,7 @@ export default function HeroSection({
   liveWeather,
   backendAiStatus
 }) {
+  const { t } = useApp();
   const currentTemp = liveWeather?.current?.temperature ?? activeLocation?.weather?.temperature ?? 24;
   const currentHumidity = liveWeather?.current?.humidity ?? activeLocation?.weather?.humidity ?? 78;
   const riskScore = cropRiskAssessment?.riskScore ?? 25;
@@ -56,6 +58,17 @@ export default function HeroSection({
     }
   };
 
+  const getLocalizedRiskCategory = (category) => {
+    switch (category) {
+      case 'Elevated': return t('riskElevated');
+      case 'Moderate': return t('riskModerate');
+      case 'Undetermined (Data Incomplete)': return t('riskUndetermined');
+      case 'Low': default: return t('riskLow');
+    }
+  };
+
+  const localizedCropName = activeCrop?.id ? t(`crop${activeCrop.id.charAt(0).toUpperCase() + activeCrop.id.slice(1)}`) : activeCrop?.name;
+
   return (
     <section className="hero-section" id="hero" aria-label="Hero Introduction">
       {/* Background Image Container with Gradient Overlays */}
@@ -74,18 +87,18 @@ export default function HeroSection({
         {/* Eyebrow Pill */}
         <div className="hero-pill-badge">
           <IconSparkles size={13} className="hero-pill-sparkle" />
-          <span>PRECISION AGTECH SENTINEL • MULTI-MODAL EARLY WARNING</span>
+          <span>{t('heroBadge')}</span>
         </div>
 
         {/* Headline */}
         <h1 className="hero-headline">
-          Predict Crop Epidemics <br />
-          <span className="hero-headline-gold">Before Spores Take Root.</span>
+          {t('heroTitleLine1')} <br />
+          <span className="hero-headline-gold">{t('heroTitleGold')}</span>
         </h1>
 
         {/* Subtitle */}
         <p className="hero-description">
-          Triangulating hyper-local Open-Meteo microclimate telemetry, epidemiological pathogen incubation models, and genuine Google Gemini 3.5 multimodal vision to safeguard smallholder crop yields across India.
+          {t('heroSubtitle')}
         </p>
 
         {/* Hero Action Buttons */}
@@ -96,7 +109,7 @@ export default function HeroSection({
             onClick={() => scrollTo('scanner')}
           >
             <IconCamera size={19} />
-            <span>Inspect Crop Foliage</span>
+            <span>{t('heroBtnScan')}</span>
           </button>
 
           <button 
@@ -105,7 +118,7 @@ export default function HeroSection({
             onClick={() => scrollTo('weather')}
           >
             <IconCloudRain size={19} />
-            <span>Live Microclimate Telemetry</span>
+            <span>{t('heroBtnTelemetry')}</span>
           </button>
         </div>
 
@@ -117,7 +130,7 @@ export default function HeroSection({
               <span className="hero-stat-icon-wrap stat-icon-blue">
                 <IconMapPin size={16} />
               </span>
-              <span className="hero-stat-label">Telemetry Station</span>
+              <span className="hero-stat-label">{t('heroStationCard')}</span>
             </div>
             <div className="hero-stat-body">
               <strong className="hero-stat-value">{activeLocation?.name || 'Agri Zone'}</strong>
@@ -133,15 +146,15 @@ export default function HeroSection({
               <span className="hero-stat-icon-wrap stat-icon-green">
                 <IconLeaf size={16} />
               </span>
-              <span className="hero-stat-label">Active Crop Plot</span>
+              <span className="hero-stat-label">{t('heroCropPlotCard')}</span>
             </div>
             <div className="hero-stat-body">
               <strong className="hero-stat-value">
-                {activeCrop?.name} {activeCrop?.icon}
+                {localizedCropName} {activeCrop?.icon}
               </strong>
               <div className="hero-stat-badge-row">
                 <span className={`hero-stat-pill ${getRiskBadgeClass(cropRiskAssessment?.riskCategory)}`}>
-                  {cropRiskAssessment?.riskCategory || 'Low'} Risk
+                  {getLocalizedRiskCategory(cropRiskAssessment?.riskCategory)}
                   {cropRiskAssessment?.riskScore !== null ? ` (${animatedRisk})` : ''}
                 </span>
               </div>
@@ -154,14 +167,14 @@ export default function HeroSection({
               <span className="hero-stat-icon-wrap stat-icon-gold">
                 <IconShieldAlert size={16} />
               </span>
-              <span className="hero-stat-label">Incubation Watch</span>
+              <span className="hero-stat-label">{t('heroIncubationCard')}</span>
             </div>
             <div className="hero-stat-body">
               <strong className="hero-stat-value text-truncate">
                 {cropRiskAssessment?.targetDisease || 'General Canopy Watch'}
               </strong>
               <span className="hero-stat-sub">
-                Bio-meteorological spore threshold
+                {t('heroBioSpore')}
               </span>
             </div>
           </div>
@@ -172,13 +185,13 @@ export default function HeroSection({
               <span className="hero-stat-icon-wrap stat-icon-emerald">
                 <IconActivity size={16} />
               </span>
-              <span className="hero-stat-label">Diagnostic Pipeline</span>
+              <span className="hero-stat-label">{t('heroDiagnosticCard')}</span>
             </div>
             <div className="hero-stat-body">
               <strong className="hero-stat-value">
                 {backendAiStatus?.isOnline && backendAiStatus?.geminiConfigured
                   ? 'Gemini 3.5 Multimodal'
-                  : 'Automated Heuristic Engine'}
+                  : t('aiHeuristics')}
               </strong>
               <span className="hero-stat-sub">
                 {backendAiStatus?.isOnline && backendAiStatus?.geminiConfigured
@@ -194,9 +207,9 @@ export default function HeroSection({
           type="button" 
           className="hero-scroll-indicator"
           onClick={() => scrollTo('weather')}
-          aria-label="Scroll down to telemetry section"
+          aria-label={t('heroExplore')}
         >
-          <span className="scroll-indicator-text">Explore System Sentinel</span>
+          <span className="scroll-indicator-text">{t('heroExplore')}</span>
           <span className="scroll-chevron-bounce">
             <IconArrowDown size={18} />
           </span>

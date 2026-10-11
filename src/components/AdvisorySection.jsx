@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { IconLeaf, IconInfo } from './Icons';
+import { useApp } from '../context/useApp';
 
 export default function AdvisorySection({ 
   advisories = [], 
   selectedCropName = 'Potato',
   dataFreshness = null 
 }) {
+  const { t } = useApp();
   const [filterCropOnly, setFilterCropOnly] = useState(false);
 
   const displayedAdvisories = filterCropOnly
@@ -32,10 +34,10 @@ export default function AdvisorySection({
       <div className="section-header-row">
         <div>
           <h2 id="advisory-section-title" className="section-title">
-            Preventive Field Advisories & Agronomic Guidance
+            {t('advisoriesTitle')}
           </h2>
           <p className="section-subtitle">
-            Actionable micro-climatic risk mitigation prioritized by urgency and forecast window.
+            {t('advisoriesSubtitle')}
           </p>
         </div>
         <div className="advisory-controls">
@@ -52,7 +54,11 @@ export default function AdvisorySection({
             aria-pressed={filterCropOnly}
           >
             <IconLeaf size={14} />
-            <span>{filterCropOnly ? `Showing: ${selectedCropName} Only` : `Filter for ${selectedCropName}`}</span>
+            <span>
+              {filterCropOnly 
+                ? t('showingOnly', { crop: selectedCropName }) 
+                : t('filterForCrop', { crop: selectedCropName })}
+            </span>
           </button>
         </div>
       </div>
