@@ -55,11 +55,22 @@ function createMicroThumbnail(sourceUrl) {
 }
 
 export async function saveScanToHistory({ cropId, cropName, previewUrl, result, symptoms = [] }) {
+  // CRITICAL GUARDRAIL: Rejected, non-plant, or unsuitable specimens must never enter history!
+  if (
+    !result || 
+    result.isPlantCrop === false || 
+    result.isSuitableSpecimen === false || 
+    result.validationStatus === 'unrelated_image' || 
+    result.validationStatus === 'harvested_produce'
+  ) {
+    return null;
+  }
+
   try {
     const history = getScanHistory();
     const thumbnail = await createMicroThumbnail(previewUrl || result?.fileInfo?.previewUrl);
 
-    const topCandidate = result?.candidates?.[0]?.name || (result?.isSuitableSpecimen ? 'No Candidate Identified' : 'Unsuitable Specimen');
+    const topCandidate = result?.candidates?.[0]?.name || (result?.isHealthy ? 'Healthy Foliage' : 'No Candidate Identified');
     const severity = result?.severityEstimate?.level || 'Undetermined';
 
     const newEntry = {

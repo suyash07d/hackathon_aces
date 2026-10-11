@@ -37,7 +37,7 @@ export default function Navbar({
       }
 
       // Track active section for navbar indicators
-      const sections = ['weather', 'risk', 'scanner', 'synthesis', 'advisories', 'how-it-works'];
+      const sections = ['weather', 'risk', 'scanner', 'recovery-tracker-section', 'synthesis', 'advisories', 'how-it-works'];
       const scrollPos = window.scrollY + 120;
       for (const sectionId of sections) {
         const el = document.getElementById(sectionId);
@@ -77,6 +77,7 @@ export default function Navbar({
     { id: 'weather', label: t('navMicroclimate') },
     { id: 'risk', label: t('navRiskEngine') },
     { id: 'scanner', label: t('navScanner') },
+    { id: 'recovery-tracker-section', label: t('navRecoveryTracker') || 'Recovery Tracker' },
     { id: 'synthesis', label: t('navSynthesis') },
     { id: 'advisories', label: t('navAdvisories') },
     { id: 'how-it-works', label: t('navHowItWorks') },

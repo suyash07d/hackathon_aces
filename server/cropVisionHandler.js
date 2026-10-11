@@ -19,14 +19,14 @@ import dotenv from 'dotenv';
 // Load environment variables from .env if present
 dotenv.config();
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB binary limit
-const SUPPORTED_CROPS = ['potato', 'tomato', 'rice', 'wheat'];
+export const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB binary limit
+export const SUPPORTED_CROPS = ['potato', 'tomato', 'rice', 'wheat'];
 
 /**
  * Normalizes base64 string and detects/cleans data URL prefix.
  */
-function cleanBase64Data(rawBase64) {
+export function cleanBase64Data(rawBase64) {
   if (!rawBase64 || typeof rawBase64 !== 'string') return null;
   const match = rawBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
   if (match) {
@@ -175,10 +175,26 @@ User Field Notes: ${userNotes || 'None provided'}
 
 Analyze the attached image strictly adhering to the 4 diagnostic stages and agricultural safety guardrails:
 
-STAGE 1: IMAGE VALIDATION
-- Determine if the image contains real agricultural plant foliage/crop tissue ("isPlantCrop": true/false).
-- If it shows an unrelated object (person, animal, vehicle, building, furniture, empty field, indoor object, etc.), set "isPlantCrop": false, "isSuitableSpecimen": false, "validationStatus": "unrelated_image", and explain why in "specimenAssessment".
-- If it shows harvested tubers/potatoes or picked fruit instead of foliage, set "isPlantCrop": true, "isSuitableSpecimen": false, "validationStatus": "harvested_produce", and explain that foliar screening requires living leaves.
+STAGE 1: STRICT IMAGE VALIDATION & UNRELATED IMAGE GUARDRAIL
+- Determine if the image contains genuine agricultural plant foliage or living crop leaves.
+- If the image depicts a human, face, fictional character (e.g. Thor, superhero, comic/movie character), actor, animal, pet, vehicle, building, furniture, indoor room, electronic device, cartoon, or ANY non-plant subject:
+  You MUST set:
+  "isPlantCrop": false,
+  "isSuitableSpecimen": false,
+  "validationStatus": "unrelated_image",
+  "identifiedSpecies": "Non-plant subject / Fictional character or person",
+  "speciesMatchesTarget": false,
+  "isHealthy": false,
+  "healthyExplanation": "",
+  "candidates": [],
+  "observedVisualFeatures": [],
+  "modelObservedSymptoms": [],
+  "specimenAssessment": "The image depicts a non-plant subject (such as a person, fictional character, or object) rather than living crop foliage. Rain Maker cannot perform crop diagnosis on non-plant images.",
+  "culturalPractices": ["Please take a clear photo of living crop leaves showing symptoms in your field."],
+  "escalationTriggers": [],
+  "expertConsultationAdvice": "Please upload a clear photograph of an affected plant leaf."
+  STRICT MANDATE: DO NOT suggest or invent ANY plant diseases or pathogens for non-plant images under any circumstances!
+- If the image depicts harvested tubers/potatoes or picked fruit instead of foliage, set "isPlantCrop": true, "isSuitableSpecimen": false, "validationStatus": "harvested_produce", and explain that foliar screening requires living leaves.
 - If the image is too blurry, dark, or low quality to evaluate, set "isSuitableSpecimen": false, "validationStatus": "inconclusive_quality".
 
 STAGE 2: PLANT IDENTIFICATION & HEALTH STATUS
@@ -295,14 +311,36 @@ Return ONLY valid JSON matching this schema:
     }
 
     // Validate mandatory keys and enforce strict safety guardrails
-    const isPlant = parsedData.isPlantCrop !== false;
-    const isSuitable = Boolean(parsedData.isSuitableSpecimen) && isPlant;
-    const isHealthy = Boolean(parsedData.isHealthy);
-    const validationStatus = parsedData.validationStatus || (isSuitable ? 'valid_foliar' : (!isPlant ? 'unrelated_image' : 'unsuitable_view'));
+    const nonPlantKeywords = [
+      'person', 'human', 'man', 'woman', 'thor', 'superhero', 'avenger', 'marvel',
+      'character', 'costume', 'actor', 'animal', 'dog', 'cat', 'vehicle', 'car',
+      'building', 'room', 'toy', 'statue', 'robot', 'screen', 'celebrity'
+    ];
+    const speciesLower = String(parsedData.identifiedSpecies || '').toLowerCase();
+    const assessmentLower = String(parsedData.specimenAssessment || '').toLowerCase();
+    const matchesNonPlantKeyword = nonPlantKeywords.some(kw => 
+      speciesLower.includes(kw) || assessmentLower.includes(kw)
+    );
 
-    // Strict safety rule: If unrelated image, harvested produce, or healthy plant, candidates MUST be empty!
+    const isExplicitlyPlant = parsedData.isPlantCrop === true && !matchesNonPlantKeyword;
+    const isExplicitlySuitable = Boolean(parsedData.isSuitableSpecimen) && isExplicitlyPlant && parsedData.validationStatus !== 'unrelated_image';
+    const isHealthy = Boolean(parsedData.isHealthy);
+
+    let validationStatus = parsedData.validationStatus;
+    if (!isExplicitlyPlant || matchesNonPlantKeyword) {
+      validationStatus = 'unrelated_image';
+    } else if (!isExplicitlySuitable) {
+      validationStatus = parsedData.validationStatus === 'harvested_produce' ? 'harvested_produce' : 'unsuitable_view';
+    } else {
+      validationStatus = 'valid_foliar';
+    }
+
+    const isPlant = isExplicitlyPlant && validationStatus !== 'unrelated_image';
+    const isSuitable = isExplicitlySuitable && isPlant;
+
+    // Strict safety rule: If unrelated image, non-plant, harvested produce, or healthy plant, candidates MUST be empty!
     let candidates = Array.isArray(parsedData.candidates) ? parsedData.candidates : [];
-    if (!isPlant || !isSuitable || isHealthy) {
+    if (!isPlant || !isSuitable || isHealthy || validationStatus === 'unrelated_image' || validationStatus === 'harvested_produce') {
       candidates = [];
     }
 

@@ -9,6 +9,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { handleCropVisionAnalysis } from './cropVisionHandler.js';
+import { handleCropRecoveryComparison } from './cropRecoveryHandler.js';
+import { handleFarmerAssistant } from './farmerAssistantHandler.js';
 
 // Load .env configuration
 dotenv.config();
@@ -42,6 +44,16 @@ app.get('/api/health', (req, res) => {
 // Primary Vision Analysis Route
 app.post('/api/analyze-crop-vision', (req, res) => {
   return handleCropVisionAnalysis(req, res);
+});
+
+// Crop Recovery Dual-Image Comparison Route
+app.post('/api/compare-crop-recovery', (req, res) => {
+  return handleCropRecoveryComparison(req, res);
+});
+
+// Voice-First Multilingual Farmer Assistant Route
+app.post('/api/farmer-assistant', (req, res) => {
+  return handleFarmerAssistant(req, res);
 });
 
 // Start listening if run directly

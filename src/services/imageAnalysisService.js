@@ -405,7 +405,7 @@ export async function analyzeCropImage({
       analysisMode: 'PRELIMINARY / Non-Foliar Specimen Guardrail',
       isAiInference: false,
       aiModel: null,
-      isPlantCrop: true,
+      isPlantCrop: specimenType !== 'other',
       isSuitableSpecimen: false,
       validationStatus: specimenType === 'harvested_produce' ? 'harvested_produce' : 'unrelated_image',
       specimenType,
@@ -566,10 +566,18 @@ export async function analyzeCropImage({
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.isAiInference) {
-          const isPlant = data.isPlantCrop !== false;
-          const isSuitable = Boolean(data.isSuitableSpecimen) && isPlant;
+          const isPlant = data.isPlantCrop === true && data.validationStatus !== 'unrelated_image';
+          const isSuitable = Boolean(data.isSuitableSpecimen) && isPlant && data.validationStatus === 'valid_foliar';
           const isHealthy = Boolean(data.isHealthy);
-          const validationStatus = data.validationStatus || (isSuitable ? 'valid_foliar' : (!isPlant ? 'unrelated_image' : 'unsuitable_view'));
+          const validationStatus = !isPlant 
+            ? 'unrelated_image' 
+            : (data.validationStatus || (isSuitable ? 'valid_foliar' : 'unsuitable_view'));
+
+          const unsuitabilityNotice = !isPlant || validationStatus === 'unrelated_image'
+            ? 'The uploaded image depicts a non-plant subject (such as a person, fictional character, or object) rather than living crop foliage. Rain Maker foliar screening requires clear, close-up photos of living plant leaves. Please upload a clear photo of an affected leaf in your field.'
+            : (validationStatus === 'harvested_produce' 
+                ? 'Harvested produce is not suitable for foliar disease screening. Please upload a photo of living plant leaves.' 
+                : null);
 
           return {
             analysisMode: `GENUINE AI / Google ${data.aiModel || 'Gemini 3.5 Flash'} Multimodal Vision`,
@@ -582,6 +590,7 @@ export async function analyzeCropImage({
             specimenType,
             specimenLabel: data.specimenLabel || (isSuitable ? 'Foliar Leaf Specimen (AI Verified)' : (!isPlant ? 'Unrelated Image (Non-Plant)' : 'Unsuitable Specimen View')),
             specimenAssessment: data.specimenAssessment || (isSuitable ? 'Foliar canopy leaf analyzed by Gemini Vision.' : 'Image not suitable for foliar diagnosis.'),
+            unsuitabilityNotice,
             identifiedSpecies: data.identifiedSpecies || cropId,
             speciesMatchesTarget: data.speciesMatchesTarget !== false,
             isHealthy,
@@ -604,14 +613,16 @@ export async function analyzeCropImage({
             modelObservedSymptoms: Array.isArray(data.modelObservedSymptoms) ? data.modelObservedSymptoms : [],
             observedVisualFeatures: Array.isArray(data.observedVisualFeatures) ? data.observedVisualFeatures : [],
             userNotes: notes.trim() || 'None provided',
-            candidates: isHealthy || !isSuitable ? [] : (Array.isArray(data.candidates) ? data.candidates : []),
+            candidates: isHealthy || !isSuitable || !isPlant || validationStatus === 'unrelated_image' || validationStatus === 'harvested_produce'
+              ? [] 
+              : (Array.isArray(data.candidates) ? data.candidates : []),
             conflictingCandidates: Boolean(data.conflictingCandidates),
             uncertaintyExplanation: data.uncertaintyExplanation || 'Foliar symptoms may overlap across bacterial and fungal pathogens, or mimic abiotic physiological stress.',
             alternativeAbioticCauses: Array.isArray(data.alternativeAbioticCauses) ? data.alternativeAbioticCauses : (Array.isArray(data.alternativeExplanations) ? data.alternativeExplanations : []),
             alternativeExplanations: Array.isArray(data.alternativeAbioticCauses) ? data.alternativeAbioticCauses : (Array.isArray(data.alternativeExplanations) ? data.alternativeExplanations : []),
             severityEstimate: {
-              level: isHealthy ? 'Healthy Plant Foliage' : (!isSuitable ? 'Non-Foliar / Unsuitable Specimen' : 'Multimodal Vision Diagnostic Match'),
-              description: isHealthy ? 'No visible active disease lesions or chlorosis detected.' : 'Observed foliar lesions analyzed against phytopathological patterns.',
+              level: isHealthy ? 'Healthy Plant Foliage' : (!isPlant ? 'Unrelated Image (Non-Plant)' : (!isSuitable ? 'Non-Foliar / Unsuitable Specimen' : 'Multimodal Vision Diagnostic Match')),
+              description: isHealthy ? 'No visible active disease lesions or chlorosis detected.' : (!isPlant ? 'Subject is not plant foliage; diagnosis withheld.' : 'Observed foliar lesions analyzed against phytopathological patterns.'),
             },
             uncertaintyFactors: Array.isArray(data.uncertainties) ? data.uncertainties : [],
             culturalPractices: Array.isArray(data.culturalPractices) ? data.culturalPractices : (Array.isArray(data.scoutingAndCulturalSteps) ? data.scoutingAndCulturalSteps : []),

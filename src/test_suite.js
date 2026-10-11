@@ -17,6 +17,21 @@ import { estimateDiseaseRisk, RISK_CATEGORIES } from './services/diseaseRiskEngi
 import { generateFarmerAdvisories } from './services/advisoryService.js';
 import { analyzeCropImage } from './services/imageAnalysisService.js';
 import { handleCropVisionAnalysis } from '../server/cropVisionHandler.js';
+import { generateCropRecommendations } from './services/recommendationEngine.js';
+import { evaluateFoliarComparison, addFollowUpToTracker } from './utils/recoveryTracker.js';
+import { saveScanToHistory, getScanHistory } from './utils/scanHistory.js';
+import { handleFarmerAssistant } from '../server/farmerAssistantHandler.js';
+import { handleCropRecoveryComparison } from '../server/cropRecoveryHandler.js';
+
+if (typeof globalThis.localStorage === 'undefined') {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => store.get(key) || null,
+    setItem: (key, val) => store.set(key, String(val)),
+    removeItem: (key) => store.delete(key),
+    clear: () => store.clear(),
+  };
+}
 
 let passed = 0;
 let failed = 0;
@@ -395,6 +410,193 @@ async function runTestSuite() {
   const serverUnrelatedData = serverUnrelatedReq.getData();
   assert(serverUnrelatedData.isSuitableSpecimen === false, 'Server flags isSuitableSpecimen = false for non-foliar view');
   assert(serverUnrelatedData.candidates.length === 0, 'Server provides 0 candidates for non-foliar view');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 18: Unrelated Image Rejection & History Guardrail
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 18] Unrelated Non-Plant / Superhero Rejection & History Guardrail');
+  const thorNonPlantScan = await analyzeCropImage({
+    cropId: 'potato',
+    specimenType: 'other',
+    symptoms: ['brown_spots', 'curling'],
+    fileInfo: { name: 'thor-avengers-wallpaper.jpg', size: 1024 * 600 },
+  });
+  assert(thorNonPlantScan.isPlantCrop === false, 'Thor/non-plant image declared isPlantCrop = false');
+  assert(thorNonPlantScan.isSuitableSpecimen === false, 'Thor/non-plant image declared isSuitableSpecimen = false');
+  assert(thorNonPlantScan.validationStatus === 'unrelated_image', 'validationStatus set to unrelated_image');
+  assert(thorNonPlantScan.candidates.length === 0, 'Candidates array strictly empty for unrelated non-plant image');
+  assert(Boolean(thorNonPlantScan.unsuitabilityNotice), 'unsuitabilityNotice provided with clear photography guidance');
+
+  // Verify non-plant scan is NEVER saved into history
+  const savedHistoryResult = await saveScanToHistory({
+    cropId: 'potato',
+    cropName: 'Potato',
+    previewUrl: 'data:image/jpeg;base64,dGVzdA==',
+    result: thorNonPlantScan,
+    symptoms: ['brown_spots'],
+  });
+  assert(savedHistoryResult === null, 'saveScanToHistory rejects saving unrelated non-plant scan');
+  const currentHistory = getScanHistory();
+  assert(currentHistory.length === 0, 'Scan history strictly contains 0 items after rejected scan');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 19: Dynamic Recommendation Engine & Cultural Actions
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 19] Dynamic Recommendation Engine & Cultural Interventions');
+  
+  // 19.1 Oomycete (Late Blight) dynamic recommendations
+  const lateBlightRecs = generateCropRecommendations({
+    cropId: 'potato',
+    candidate: { name: 'Late Blight (Phytophthora)', pathogen: 'oomycete' },
+    symptoms: ['water_soaked', 'brown_spots'],
+    weather: { current: { relative_humidity_2m: 90, temperature_2m: 18 } },
+    language: 'en',
+  });
+  assert(lateBlightRecs.whatYouCanDoNow.length >= 2, 'Late Blight generates specific cultural actions');
+  const lateBlightAvoidText = lateBlightRecs.whatYouCanDoNow.map((a) => a.whatToAvoid).join(' ');
+  assert(lateBlightAvoidText.includes('overhead sprinkler') || lateBlightAvoidText.includes('sprinklers') || lateBlightAvoidText.includes('Do NOT irrigate late'), 'Late Blight explicitly advises avoiding evening overhead watering');
+  assert(lateBlightRecs.whatToCheckNext.length >= 1, 'Late Blight generates foliar checkpoints');
+  assert(lateBlightRecs.whatToCheckNext[0].targetSign.includes('sporangia') || lateBlightRecs.whatToCheckNext[0].targetSign.includes('down') || lateBlightRecs.whatToCheckNext[0].targetSign.includes('halo'), 'Late Blight checkpoint targets sporangial signs');
+
+  // 19.2 Bacterium (Bacterial Wilt) dynamic recommendations
+  const bacterialRecs = generateCropRecommendations({
+    cropId: 'potato',
+    candidate: { name: 'Bacterial Wilt (Ralstonia solanacearum)', pathogen: 'bacterium' },
+    symptoms: ['wilting', 'yellowing'],
+    language: 'en',
+  });
+  const bacterialActions = bacterialRecs.whatYouCanDoNow.map((a) => a.action).join(' ');
+  const bacterialAvoid = bacterialRecs.whatYouCanDoNow.map((a) => a.whatToAvoid).join(' ');
+  assert(bacterialActions.includes('Rogue') || bacterialActions.includes('uproot') || bacterialActions.includes('Disinfect'), 'Bacterial Wilt recommends roguing and tool sanitation');
+  assert(bacterialAvoid.includes('Do NOT prune') || bacterialAvoid.includes('healthy plants'), 'Bacterial Wilt explicitly warns against pruning healthy plants with infected tools');
+
+  // 19.3 Healthy Foliage recommendations
+  const healthyRecs = generateCropRecommendations({
+    cropId: 'tomato',
+    isHealthy: true,
+    symptoms: [],
+    language: 'en',
+  });
+  assert(healthyRecs.whatYouCanDoNow.length >= 1, 'Healthy foliage generates canopy monitoring actions');
+  assert(healthyRecs.whatYouCanDoNow[0].urgency === 'Routine', 'Healthy foliage urgency is Routine');
+
+  // 19.4 Multilingual Marathi and Hindi support
+  const mrRecs = generateCropRecommendations({
+    cropId: 'potato',
+    candidate: { name: 'Late Blight (Phytophthora)', pathogen: 'oomycete' },
+    symptoms: ['water_soaked'],
+    language: 'mr',
+  });
+  assert(mrRecs.whatYouCanDoNow[0].category.includes('पाणी व्यवस्थापन') || mrRecs.whatYouCanDoNow[0].category.includes('व्यवस्थापन'), 'Marathi recommendation category is translated');
+  assert(mrRecs.whenToGetHelp.helpline.includes('1800-180-1551'), 'Kisan Call Centre helpline 1800-180-1551 present');
+
+  const hiRecs = generateCropRecommendations({
+    cropId: 'potato',
+    candidate: { name: 'Late Blight (Phytophthora)', pathogen: 'oomycete' },
+    symptoms: ['water_soaked'],
+    language: 'hi',
+  });
+  assert(hiRecs.whatYouCanDoNow[0].category.includes('सिंचाई') || hiRecs.whatYouCanDoNow[0].category.includes('प्रबंधन'), 'Hindi recommendation category is translated');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 20: Crop Recovery Tracker Comparison Engine
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 20] Crop Recovery Tracker Comparison Engine');
+  
+  // 20.1 Improving status: symptoms cleared
+  const improvingEval = evaluateFoliarComparison({
+    baseline: { symptoms: ['brown_spots', 'water_soaked'], isHealthy: false },
+    followUp: { symptoms: [], isHealthy: true },
+    userNotes: 'Leaves looking much greener after morning watering shift.',
+  });
+  assert(improvingEval.status === 'improving', 'Recovery tracker evaluates cleared symptoms as improving');
+  assert(improvingEval.differences.some((d) => d.includes('Farmer observation')), 'Farmer observation included in differences');
+
+  // 20.2 Stable status: symptoms contained
+  const stableEval = evaluateFoliarComparison({
+    baseline: { symptoms: ['brown_spots'], isHealthy: false },
+    followUp: { symptoms: ['brown_spots'], isHealthy: false },
+  });
+  assert(stableEval.status === 'stable', 'Recovery tracker evaluates unchanged symptoms as stable');
+
+  // 20.3 Worsening status: new symptom types emerged
+  const worseningEval = evaluateFoliarComparison({
+    baseline: { symptoms: ['brown_spots'], isHealthy: false },
+    followUp: { symptoms: ['brown_spots', 'yellowing', 'wilting'], isHealthy: false },
+  });
+  assert(worseningEval.status === 'worsening', 'Recovery tracker evaluates new symptoms as worsening');
+
+  // 20.4 Guardrail against adding rejected scans to tracker
+  let rejectedTrackerError = null;
+  try {
+    await addFollowUpToTracker({
+      recordId: 'fake-record',
+      previewUrl: 'data:image/jpeg;base64,dGVzdA==',
+      result: { isPlantCrop: false, isSuitableSpecimen: false, validationStatus: 'unrelated_image' },
+    });
+  } catch (err) {
+    rejectedTrackerError = err;
+  }
+  assert(rejectedTrackerError !== null, 'addFollowUpToTracker throws error when passed unsuitable or non-plant image');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 21: Farmer Assistant Endpoint & Multimodal Recovery Server
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 21] Farmer Assistant & Multimodal Recovery Server Handlers');
+
+  // 21.1 Method not allowed on farmer assistant
+  const badMethodAssistantReq = createMockReqRes({}, 'GET');
+  await handleFarmerAssistant(badMethodAssistantReq.req, badMethodAssistantReq.res);
+  assert(badMethodAssistantReq.getStatusCode() === 405, 'Non-POST on assistant returns 405 Method Not Allowed');
+
+  // 21.2 Empty query validation
+  const emptyAssistantReq = createMockReqRes({ message: '   ' });
+  await handleFarmerAssistant(emptyAssistantReq.req, emptyAssistantReq.res);
+  assert(emptyAssistantReq.getStatusCode() === 400, 'Empty assistant message returns 400 Bad Request');
+
+  // 21.3 Assistant fallback response (safe agricultural advice, strictly NO synthetic chemical dosages)
+  const queryAssistantReq = createMockReqRes({
+    message: 'How should I irrigate my potato crop today?',
+    cropContext: { cropId: 'potato', cropName: 'Potato' },
+    language: 'en',
+  });
+  await handleFarmerAssistant(queryAssistantReq.req, queryAssistantReq.res);
+  assert(queryAssistantReq.getStatusCode() === 200, 'Assistant returns 200 with safe response');
+  const assistantData = queryAssistantReq.getData();
+  assert(Boolean(assistantData.reply), 'Assistant reply is populated');
+  assert(Array.isArray(assistantData.quickChips) && assistantData.quickChips.length > 0, 'Assistant generates quick chips');
+  assert(!assistantData.reply.match(/\b\d+\s*(?:ml|gm|litres?|ppm)\b/i), 'Assistant advice excludes synthetic chemical dosages');
+
+  // 21.4 Marathi Assistant Query
+  const mrAssistantReq = createMockReqRes({
+    message: 'पाणी कधी आणि कसे द्यावे?',
+    cropContext: { cropId: 'potato', cropName: 'बटाटा' },
+    language: 'mr',
+  });
+  await handleFarmerAssistant(mrAssistantReq.req, mrAssistantReq.res);
+  assert(mrAssistantReq.getStatusCode() === 200, 'Marathi assistant query returns 200');
+  const mrAssistantData = mrAssistantReq.getData();
+  assert(Boolean(mrAssistantData.reply), 'Marathi assistant reply is populated');
+
+  // 21.5 Crop recovery comparison server handler
+  const badRecoveryMethodReq = createMockReqRes({}, 'GET');
+  await handleCropRecoveryComparison(badRecoveryMethodReq.req, badRecoveryMethodReq.res);
+  assert(badRecoveryMethodReq.getStatusCode() === 405, 'Non-POST on recovery comparison returns 405');
+
+  const missingRecoveryImgReq = createMockReqRes({ baselineImageBase64: 'dGVzdA==' });
+  await handleCropRecoveryComparison(missingRecoveryImgReq.req, missingRecoveryImgReq.res);
+  assert(missingRecoveryImgReq.getStatusCode() === 400, 'Missing follow-up image returns 400');
+
+  const validRecoveryReq = createMockReqRes({
+    baselineImageBase64: 'dGVzdA==',
+    followUpImageBase64: 'dGVzdA==',
+    baselineSymptoms: ['brown_spots'],
+    followUpSymptoms: [],
+  });
+  await handleCropRecoveryComparison(validRecoveryReq.req, validRecoveryReq.res);
+  assert(validRecoveryReq.getStatusCode() === 200, 'Valid recovery request returns 200');
+  const recoveryData = validRecoveryReq.getData();
+  assert(Boolean(recoveryData.status), 'Recovery comparison returns evaluated status');
 
   // -------------------------------------------------------------------------
   // SUMMARY

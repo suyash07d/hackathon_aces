@@ -23,6 +23,8 @@ import {
 } from '../services/imageAnalysisService';
 import { checkImageQuality } from '../utils/imageQuality';
 import { saveScanToHistory } from '../utils/scanHistory';
+import { generateCropRecommendations } from '../services/recommendationEngine';
+import { saveBaselineToTracker } from '../utils/recoveryTracker';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import { useApp } from '../context/useApp';
 import { SUPPORTED_LANGUAGES } from '../i18n/translations';
@@ -36,7 +38,13 @@ import ScanHistoryDrawer from './ScanHistoryDrawer';
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
-export default function CropImageScanner({ activeCropId, onCropChange, onAnalysisResultChange }) {
+export default function CropImageScanner({ 
+  activeCropId, 
+  onCropChange, 
+  onAnalysisResultChange,
+  liveWeather,
+  onOpenTracker 
+}) {
   const { t, language, setLanguage } = useApp();
 
   // Upload and form states
@@ -316,14 +324,16 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
       setAnalysisResult(result);
       onAnalysisResultChange?.(result);
 
-      // Save to browser scan history (Feature 8)
-      saveScanToHistory({
-        cropId: selectedCrop,
-        cropName: result.cropName,
-        previewUrl,
-        result,
-        symptoms: selectedSymptoms,
-      });
+      // Save to browser scan history only for valid foliage (Priority 1 Guardrail)
+      if (result.isPlantCrop !== false && result.isSuitableSpecimen && result.validationStatus === 'valid_foliar') {
+        saveScanToHistory({
+          cropId: selectedCrop,
+          cropName: result.cropName,
+          previewUrl,
+          result,
+          symptoms: selectedSymptoms,
+        });
+      }
     } catch {
       setUploadError('Failed to complete symptom analysis. Please check network connection and try again.');
     } finally {
@@ -359,6 +369,49 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     onAnalysisResultChange?.(pastResult);
   };
 
+  // Dynamic case-specific recommendations (Priority 3)
+  const recommendations = React.useMemo(() => {
+    if (!analysisResult) return null;
+    return generateCropRecommendations({
+      cropId: analysisResult.cropId || selectedCrop,
+      candidate: analysisResult.candidates?.[0] || null,
+      candidates: analysisResult.candidates || [],
+      symptoms: selectedSymptoms,
+      weather: liveWeather,
+      isHealthy: analysisResult.isHealthy,
+      isSuitableSpecimen: analysisResult.isSuitableSpecimen,
+      isPlantCrop: analysisResult.isPlantCrop,
+      language,
+    });
+  }, [analysisResult, selectedCrop, selectedSymptoms, liveWeather, language]);
+
+  // Handler for saving baseline into Recovery Tracker (Priority 4)
+  const [trackSavedSuccess, setTrackSavedSuccess] = useState(false);
+
+  const handleTrackInRecovery = async () => {
+    if (!analysisResult) return;
+    try {
+      await saveBaselineToTracker({
+        cropId: selectedCrop,
+        cropName: analysisResult.cropName,
+        previewUrl,
+        result: analysisResult,
+        symptoms: selectedSymptoms,
+        farmerNotes: notes,
+        actionsTaken: 'Baseline registered in AI Crop Scanner.',
+        remindDays: 4,
+        weatherSnapshot: liveWeather,
+      });
+      setTrackSavedSuccess(true);
+      setTimeout(() => setTrackSavedSuccess(false), 4000);
+      if (onOpenTracker) {
+        onOpenTracker();
+      }
+    } catch (err) {
+      alert(err.message || 'Could not save to recovery tracker.');
+    }
+  };
+
   // Text-To-Speech speech synthesizer handler (Feature 6 & Requirement 3)
   const handleToggleSpeech = () => {
     if (isSpeaking) {
@@ -385,15 +438,16 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     }
 
     if (!analysisResult.isPlantCrop || analysisResult.validationStatus === 'unrelated_image') {
-      textToRead += `${t('statusUnrelatedTitle')}. `;
+      textToRead += `${t('statusUnrelatedTitle')}. ${analysisResult.unsuitabilityNotice || t('statusUnrelatedDesc')}. `;
     } else if (analysisResult.isHealthy) {
-      textToRead += `${t('statusHealthyTitle')}. `;
+      textToRead += `${t('statusHealthyTitle')}. ${analysisResult.healthyExplanation || t('statusHealthyDesc')}. `;
     } else {
       textToRead += `${t('section2PossibleTitle')}: ${topCandText}. `;
+      if (recommendations?.whatYouCanDoNow && recommendations.whatYouCanDoNow.length > 0) {
+        textToRead += `${t('section5NextStepsTitle')}: ${recommendations.whatYouCanDoNow.map(a => a.action).join(' ')} `;
+      }
+      textToRead += `${t('section6ExpertHelpTitle')}: ${t('kvkNotice')} ${t('kvkHelpline')}`;
     }
-
-    textToRead += `${t('section5NextStepsTitle')}: ${t('actionStopWatering')} ${t('actionPruneLeaves')} `;
-    textToRead += `${t('section6ExpertHelpTitle')}: ${t('kvkNotice')} ${t('kvkHelpline')}`;
 
     speak(textToRead);
   };
@@ -1008,6 +1062,18 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                 )}
               </div>
 
+              {/* Button to save baseline to Crop Recovery Tracker (Priority 4) */}
+              {analysisResult.isPlantCrop !== false && analysisResult.isSuitableSpecimen && analysisResult.validationStatus === 'valid_foliar' && (
+                <button
+                  type="button"
+                  className="btn-track-in-recovery"
+                  onClick={handleTrackInRecovery}
+                  title="Track crop healing over time in Recovery Tracker"
+                >
+                  <span>🌱 {trackSavedSuccess ? '✓ Saved to Tracker!' : 'Track Recovery'}</span>
+                </button>
+              )}
+
               <button 
                 type="button" 
                 className="btn-analyze-another"
@@ -1129,20 +1195,49 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
 
             {/* State A: Unrelated Image / Non-Plant Object */}
             {(!analysisResult.isPlantCrop || analysisResult.validationStatus === 'unrelated_image') && (
-              <div className="unrelated-image-banner" role="alert">
-                <IconAlertCircle size={24} className="unrelated-icon" />
-                <div className="unrelated-content">
-                  <strong className="unrelated-title">{t('statusUnrelatedTitle')}</strong>
-                  <p className="unrelated-desc">{t('statusUnrelatedDesc')}</p>
-                  <p className="unrelated-guidance">
-                    👉 <em>{t('guidanceRecommended')}</em>
-                  </p>
+              <div className="unrelated-rejection-card reveal-smooth" role="alert">
+                <div className="urc-header">
+                  <IconAlertCircle size={28} className="urc-icon" />
+                  <div>
+                    <strong className="urc-title">{t('statusUnrelatedTitle')}</strong>
+                    <p className="urc-desc">
+                      {analysisResult.unsuitabilityNotice || t('statusUnrelatedDesc')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="photo-taking-guide-box">
+                  <h5 className="ptg-title">📸 Field Photography Guidelines for Accurate Diagnosis:</h5>
+                  <div className="ptg-steps-grid">
+                    <div className="ptg-step">
+                      <span className="ptg-num">1</span>
+                      <strong>Living Crop Leaves:</strong>
+                      <p>Photograph living leaves or canopy foliage attached to the plant in the field.</p>
+                    </div>
+                    <div className="ptg-step">
+                      <span className="ptg-num">2</span>
+                      <strong>Close-up (15–30 cm):</strong>
+                      <p>Hold the camera steady so leaf veins and lesion margins are in sharp focus.</p>
+                    </div>
+                    <div className="ptg-step">
+                      <span className="ptg-num">3</span>
+                      <strong>Natural Daylight:</strong>
+                      <p>Avoid nighttime flash or heavy shadows. Inspect leaf undersides at dawn.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="urc-actions">
+                  <button type="button" className="btn-reupload-leaf" onClick={handleReset}>
+                    <IconCamera size={16} />
+                    <span>Upload Clear Foliar Leaf Photo</span>
+                  </button>
                 </div>
               </div>
             )}
 
             {/* State B: Visibly Healthy Foliage */}
-            {analysisResult.isHealthy && (
+            {analysisResult.isHealthy && analysisResult.isSuitableSpecimen && analysisResult.isPlantCrop !== false && (
               <div className="healthy-foliage-banner" role="status">
                 <IconCheck size={24} className="healthy-icon" />
                 <div className="healthy-content">
@@ -1162,6 +1257,12 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                 <div className="unsuitable-text-box">
                   <strong className="unsuitable-title">{t('section2UnsuitableNotice')}</strong>
                   <p className="unsuitable-desc">{analysisResult.unsuitabilityNotice}</p>
+                  <div className="urc-actions" style={{ marginTop: '0.75rem' }}>
+                    <button type="button" className="btn-reupload-leaf" onClick={handleReset}>
+                      <IconCamera size={15} />
+                      <span>Upload In-Field Plant Leaf Photo</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1286,268 +1387,284 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             ) : null}
           </div>
 
-          {/* SECTION 3: EVIDENCE & DIFFERENTIAL COMPARISON (पुरावा आणि रोगांमधील फरक) */}
-          <div className="farmer-report-section section-evidence">
-            <div className="frs-header">
-              <span className="frs-number">3</span>
-              <div>
-                <h4 className="frs-title">{t('section3EvidenceTitle')}</h4>
-                <p className="frs-sub">{t('section3EvidenceSub')}</p>
-              </div>
-            </div>
-
-            <div className="evidence-comparison-grid">
-              {/* Evidence Present Breakdown */}
-              <div className="evidence-panel panel-present">
-                <div className="panel-header">
-                  <IconCheck size={16} className="panel-icon icon-pass" />
-                  <strong>{t('evidencePresentTitle')}</strong>
+          {/* Sections 3, 4, 5, 6: Only rendered for verified, suitable plant foliage */}
+          {analysisResult.isPlantCrop !== false && analysisResult.isSuitableSpecimen && analysisResult.validationStatus === 'valid_foliar' && (
+            <>
+              {/* SECTION 3: EVIDENCE & DIFFERENTIAL COMPARISON (पुरावा आणि रोगांमधील फरक) */}
+              <div className="farmer-report-section section-evidence">
+                <div className="frs-header">
+                  <span className="frs-number">3</span>
+                  <div>
+                    <h4 className="frs-title">{t('section3EvidenceTitle')}</h4>
+                    <p className="frs-sub">{t('section3EvidenceSub')}</p>
+                  </div>
                 </div>
-                <ul className="evidence-list">
-                  {analysisResult.userReportedSymptoms && analysisResult.userReportedSymptoms.length > 0 ? (
-                    analysisResult.userReportedSymptoms.map((sym, sIdx) => (
-                      <li key={sIdx}>
-                        <span className="bullet-pass">✓</span>
-                        <span>{sym} (User reported)</span>
+
+                <div className="evidence-comparison-grid">
+                  {/* Evidence Present Breakdown */}
+                  <div className="evidence-panel panel-present">
+                    <div className="panel-header">
+                      <IconCheck size={16} className="panel-icon icon-pass" />
+                      <strong>{t('evidencePresentTitle')}</strong>
+                    </div>
+                    <ul className="evidence-list">
+                      {analysisResult.userReportedSymptoms && analysisResult.userReportedSymptoms.length > 0 ? (
+                        analysisResult.userReportedSymptoms.map((sym, sIdx) => (
+                          <li key={sIdx}>
+                            <span className="bullet-pass">✓</span>
+                            <span>{sym} (User reported)</span>
+                          </li>
+                        ))
+                      ) : null}
+                      {(analysisResult.observedVisualFeatures || []).map((feat, fIdx) => (
+                        <li key={`feat-${fIdx}`}>
+                          <span className="bullet-pass">✓</span>
+                          <span>{feat} (Observed in photo)</span>
+                        </li>
+                      ))}
+                      {(!analysisResult.userReportedSymptoms?.length && !analysisResult.observedVisualFeatures?.length) && (
+                        <li className="empty-evidence-msg">
+                          <span>{t('section1NoSymptoms')}</span>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+
+                  {/* Missing or Uncertain Evidence Panel */}
+                  <div className="evidence-panel panel-missing">
+                    <div className="panel-header">
+                      <IconAlertCircle size={16} className="panel-icon icon-warn" />
+                      <strong>{t('evidenceMissingTitle')}</strong>
+                    </div>
+                    <ul className="evidence-list">
+                      {analysisResult.candidates && analysisResult.candidates.length > 0 && analysisResult.candidates[0].missingEvidence ? (
+                        <li>
+                          <span className="bullet-warn">⚠️</span>
+                          <span>{analysisResult.candidates[0].missingEvidence}</span>
+                        </li>
+                      ) : null}
+                      {(analysisResult.evidenceMissingOrUncertain || []).map((mItem, mIdx) => (
+                        <li key={mIdx}>
+                          <span className="bullet-warn">⚠️</span>
+                          <span>{mItem}</span>
+                        </li>
+                      ))}
+                      {(!analysisResult.evidenceMissingOrUncertain?.length && !analysisResult.candidates?.[0]?.missingEvidence) && (
+                        <li>
+                          <span className="bullet-warn">⚠️</span>
+                          <span>Microscopic pathogen sporulation and bacterial streaming cannot be confirmed without laboratory culture or PCR assay.</span>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Differential Comparison Callout */}
+                {analysisResult.candidates && analysisResult.candidates.length > 0 && analysisResult.candidates[0].differentialComparison && (
+                  <div className="differential-box">
+                    <div className="diff-header">
+                      <IconInfo size={16} />
+                      <strong>{t('differentialTitle')}</strong>
+                    </div>
+                    <p className="diff-text">{analysisResult.candidates[0].differentialComparison}</p>
+                  </div>
+                )}
+
+                {/* Alternative Non-Disease or Abiotic Explanations */}
+                <div className="alternative-explanations-card">
+                  <div className="alt-exp-header">
+                    <IconInfo size={15} />
+                    <strong>{t('alternativeExplanationsTitle')}</strong>
+                  </div>
+                  <ul className="alt-exp-list">
+                    {(analysisResult.alternativeExplanations && analysisResult.alternativeExplanations.length > 0
+                      ? analysisResult.alternativeExplanations
+                      : (ALTERNATIVE_EXPLANATIONS_TRANSLATIONS[language] || ALTERNATIVE_EXPLANATIONS_TRANSLATIONS.en)
+                    ).map((altExp, aIdx) => (
+                      <li key={aIdx}>
+                        <span className="alt-bullet">•</span>
+                        <span>{altExp}</span>
                       </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* SECTION 4: DIAGNOSTIC CONFIDENCE & KNOWN LIMITATIONS (निदानाची विश्वासार्हता व मर्यादा) */}
+              <div className="farmer-report-section section-confidence">
+                <div className="frs-header">
+                  <span className="frs-number">4</span>
+                  <div>
+                    <h4 className="frs-title">{t('section4ConfidenceTitle')}</h4>
+                    <p className="frs-sub">{t('section4ConfidenceSub')}</p>
+                  </div>
+                </div>
+
+                <div className="confidence-details-card">
+                  <div className="confidence-principle">
+                    <IconInfo size={18} className="conf-icon" />
+                    <div className="conf-principle-text">
+                      <strong className="principle-title">Scientific Integrity & Calibration Principle:</strong>
+                      <p className="principle-desc">{t('diagnosticsConfidenceNotice')}</p>
+                    </div>
+                  </div>
+
+                  <div className="limitations-grid">
+                    <div className="limitation-item">
+                      <span className="lim-badge">Visual Inference Limit</span>
+                      <p className="lim-text">
+                        Field photographs assess surface lesion morphology. They cannot test plant sap, fungal DNA, or internal vascular browning.
+                      </p>
+                    </div>
+                    <div className="limitation-item">
+                      <span className="lim-badge">Incubation Latency</span>
+                      <p className="lim-text">
+                        Fungal mycelia may incubate within leaf mesophyll cells for 3–7 days before visible necrotic lesions emerge macroscopically.
+                      </p>
+                    </div>
+                    <div className="limitation-item">
+                      <span className="lim-badge">Abiotic Mimics</span>
+                      <p className="lim-text">
+                        Potassium deficiency, herbicide drift, and extreme heat scorch frequently mimic fungal blight patterns.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 5: RECOMMENDED NEXT STEPS (सुरक्षित मशागत पद्धती - Dynamic Recommendations) */}
+              <div className="farmer-report-section section-action-now">
+                <div className="frs-header">
+                  <span className="frs-number">5</span>
+                  <div>
+                    <h4 className="frs-title">{t('section5NextStepsTitle')}</h4>
+                    <p className="frs-sub">{t('section5NextStepsSub')}</p>
+                  </div>
+                </div>
+
+                {/* Dynamic Non-Chemical Safe Cultural Interventions */}
+                <div className="dynamic-actions-grid">
+                  {recommendations?.whatYouCanDoNow && recommendations.whatYouCanDoNow.length > 0 ? (
+                    recommendations.whatYouCanDoNow.map((actionItem) => (
+                      <div key={actionItem.id} className="dynamic-action-card">
+                        <div className="dac-header">
+                          <span className="dac-icon">{actionItem.icon}</span>
+                          <div className="dac-cat-box">
+                            <span className="dac-cat">{actionItem.category}</span>
+                            <span className={`dac-urgency urgency-${(actionItem.urgency || 'routine').toLowerCase()}`}>
+                              {actionItem.urgency}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="dac-action-text">{actionItem.action}</p>
+
+                        <div className="dac-sub-grid">
+                          <div className="dac-rationale-box">
+                            <strong className="dac-subheading">💡 Why this applies:</strong>
+                            <p className="dac-subtext">{actionItem.rationale}</p>
+                          </div>
+
+                          <div className="dac-avoid-box">
+                            <strong className="dac-subheading dac-avoid-title">🛑 What to avoid:</strong>
+                            <p className="dac-subtext">{actionItem.whatToAvoid}</p>
+                          </div>
+                        </div>
+                      </div>
                     ))
-                  ) : null}
-                  {(analysisResult.observedVisualFeatures || []).map((feat, fIdx) => (
-                    <li key={`feat-${fIdx}`}>
-                      <span className="bullet-pass">✓</span>
-                      <span>{feat} (Observed in photo)</span>
-                    </li>
-                  ))}
-                  {(!analysisResult.userReportedSymptoms?.length && !analysisResult.observedVisualFeatures?.length) && (
-                    <li className="empty-evidence-msg">
-                      <span>{t('section1NoSymptoms')}</span>
-                    </li>
+                  ) : (
+                    <div className="action-card">
+                      <p className="action-card-text">{t('actionStopWatering')}</p>
+                    </div>
                   )}
-                </ul>
-              </div>
-
-              {/* Missing or Uncertain Evidence Panel */}
-              <div className="evidence-panel panel-missing">
-                <div className="panel-header">
-                  <IconAlertCircle size={16} className="panel-icon icon-warn" />
-                  <strong>{t('evidenceMissingTitle')}</strong>
                 </div>
-                <ul className="evidence-list">
-                  {analysisResult.candidates && analysisResult.candidates.length > 0 && analysisResult.candidates[0].missingEvidence ? (
-                    <li>
-                      <span className="bullet-warn">⚠️</span>
-                      <span>{analysisResult.candidates[0].missingEvidence}</span>
-                    </li>
-                  ) : null}
-                  {(analysisResult.evidenceMissingOrUncertain || []).map((mItem, mIdx) => (
-                    <li key={mIdx}>
-                      <span className="bullet-warn">⚠️</span>
-                      <span>{mItem}</span>
-                    </li>
-                  ))}
-                  {(!analysisResult.evidenceMissingOrUncertain?.length && !analysisResult.candidates?.[0]?.missingEvidence) && (
-                    <li>
-                      <span className="bullet-warn">⚠️</span>
-                      <span>Microscopic pathogen sporulation and bacterial streaming cannot be confirmed without laboratory culture or PCR assay.</span>
-                    </li>
-                  )}
-                </ul>
-              </div>
-            </div>
 
-            {/* Differential Comparison Callout */}
-            {analysisResult.candidates && analysisResult.candidates.length > 0 && analysisResult.candidates[0].differentialComparison && (
-              <div className="differential-box">
-                <div className="diff-header">
-                  <IconInfo size={16} />
-                  <strong>{t('differentialTitle')}</strong>
-                </div>
-                <p className="diff-text">{analysisResult.candidates[0].differentialComparison}</p>
-              </div>
-            )}
+                {/* Dynamic Field Monitoring Checkpoints */}
+                {recommendations?.whatToCheckNext && recommendations.whatToCheckNext.length > 0 && (
+                  <div className="checkpoints-list">
+                    <h5 className="checkpoints-heading">Targeted Field Checkpoints (Distinguishing Leading Candidates):</h5>
+                    <div className="checkpoints-dynamic-stack">
+                      {recommendations.whatToCheckNext.map((cp, cpIdx) => (
+                        <div key={cpIdx} className="dynamic-checkpoint-card">
+                          <div className="dcp-header">
+                            <span className="dcp-part-badge">📍 {cp.plantPart}</span>
+                            <span className="dcp-timing-badge">⏱️ {cp.timing}</span>
+                          </div>
+                          <div className="dcp-target-box">
+                            <strong className="dcp-target-label">Target Sign:</strong>
+                            <span className="dcp-target-text">{cp.targetSign}</span>
+                          </div>
+                          <div className="dcp-differential-row">
+                            <div className="dcp-verdict dcp-confirm">
+                              <span className="verdict-icon">✓</span>
+                              <span>{cp.confirmsIf}</span>
+                            </div>
+                            <div className="dcp-verdict dcp-refute">
+                              <span className="verdict-icon">✕</span>
+                              <span>{cp.refutesIf}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-            {/* Alternative Non-Disease or Abiotic Explanations */}
-            <div className="alternative-explanations-card">
-              <div className="alt-exp-header">
-                <IconInfo size={15} />
-                <strong>{t('alternativeExplanationsTitle')}</strong>
-              </div>
-              <ul className="alt-exp-list">
-                {(analysisResult.alternativeExplanations && analysisResult.alternativeExplanations.length > 0
-                  ? analysisResult.alternativeExplanations
-                  : (ALTERNATIVE_EXPLANATIONS_TRANSLATIONS[language] || ALTERNATIVE_EXPLANATIONS_TRANSLATIONS.en)
-                ).map((altExp, aIdx) => (
-                  <li key={aIdx}>
-                    <span className="alt-bullet">•</span>
-                    <span>{altExp}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* SECTION 4: DIAGNOSTIC CONFIDENCE & KNOWN LIMITATIONS (निदानाची विश्वासार्हता व मर्यादा) */}
-          <div className="farmer-report-section section-confidence">
-            <div className="frs-header">
-              <span className="frs-number">4</span>
-              <div>
-                <h4 className="frs-title">{t('section4ConfidenceTitle')}</h4>
-                <p className="frs-sub">{t('section4ConfidenceSub')}</p>
-              </div>
-            </div>
-
-            <div className="confidence-details-card">
-              <div className="confidence-principle">
-                <IconInfo size={18} className="conf-icon" />
-                <div className="conf-principle-text">
-                  <strong className="principle-title">Scientific Integrity & Calibration Principle:</strong>
-                  <p className="principle-desc">{t('diagnosticsConfidenceNotice')}</p>
+                {/* CRITICAL FARMER SAFETY RULE: Chemical Pesticide Warning */}
+                <div className="chemical-safety-warning-banner" role="alert">
+                  <IconShieldAlert size={22} className="chem-safety-icon" />
+                  <div className="chem-safety-content">
+                    <strong className="chem-safety-title">{t('chemicalSafetyHeading')}</strong>
+                    <p className="chem-safety-desc">
+                      {analysisResult.chemicalDisclaimer || t('chemicalSafetyNotice')}
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="limitations-grid">
-                <div className="limitation-item">
-                  <span className="lim-badge">Visual Inference Limit</span>
-                  <p className="lim-text">
-                    Field photographs assess surface lesion morphology. They cannot test plant sap, fungal DNA, or internal vascular browning.
-                  </p>
+              {/* SECTION 6: WHEN TO SEEK EXPERT HELP (तज्ज्ञांचा सल्ला कधी घ्यावा) */}
+              <div className="farmer-report-section section-get-help">
+                <div className="frs-header">
+                  <span className="frs-number">6</span>
+                  <div>
+                    <h4 className="frs-title">{t('section6ExpertHelpTitle')}</h4>
+                    <p className="frs-sub">{t('section6ExpertHelpSub')}</p>
+                  </div>
                 </div>
-                <div className="limitation-item">
-                  <span className="lim-badge">Incubation Latency</span>
-                  <p className="lim-text">
-                    Fungal mycelia may incubate within leaf mesophyll cells for 3–7 days before visible necrotic lesions emerge macroscopically.
-                  </p>
-                </div>
-                <div className="limitation-item">
-                  <span className="lim-badge">Abiotic Mimics</span>
-                  <p className="lim-text">
-                    Potassium deficiency, herbicide drift, and extreme heat scorch frequently mimic fungal blight patterns.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* SECTION 5: RECOMMENDED NEXT STEPS (सुरक्षित मशागत पद्धती) */}
-          <div className="farmer-report-section section-action-now">
-            <div className="frs-header">
-              <span className="frs-number">5</span>
-              <div>
-                <h4 className="frs-title">{t('section5NextStepsTitle')}</h4>
-                <p className="frs-sub">{t('section5NextStepsSub')}</p>
-              </div>
-            </div>
-
-            {/* Non-Chemical Safe Cultural Interventions */}
-            <div className="action-cards-grid">
-              <div className="action-card">
-                <div className="action-card-header">
-                  <span className="action-icon-pill pill-blue">💧</span>
-                  <strong>{t('actionIrrigationHeading')}</strong>
+                <div className="escalation-box">
+                  <strong className="escalation-title">{t('escalationHeading')}</strong>
+                  <ul className="escalation-list">
+                    {(recommendations?.whenToGetHelp?.triggers || [
+                      t('escalationTrigger1'),
+                      t('escalationTrigger2'),
+                      t('escalationTrigger3'),
+                    ]).map((trig, tIdx) => (
+                      <li key={`trig-${tIdx}`}><span className="bullet-esc">⚠️</span> {trig}</li>
+                    ))}
+                  </ul>
                 </div>
-                <p className="action-card-text">{t('actionStopWatering')}</p>
-              </div>
 
-              <div className="action-card">
-                <div className="action-card-header">
-                  <span className="action-icon-pill pill-red">✂️</span>
-                  <strong>{t('actionSanitationHeading')}</strong>
-                </div>
-                <p className="action-card-text">{t('actionPruneLeaves')}</p>
-              </div>
-
-              <div className="action-card">
-                <div className="action-card-header">
-                  <span className="action-icon-pill pill-amber">🧼</span>
-                  <strong>{t('actionSterilizationHeading')}</strong>
-                </div>
-                <p className="action-card-text">{t('actionSanitizeTools')}</p>
-              </div>
-
-              <div className="action-card">
-                <div className="action-card-header">
-                  <span className="action-icon-pill pill-green">🌬️</span>
-                  <strong>{t('actionAerationHeading')}</strong>
-                </div>
-                <p className="action-card-text">{t('actionImproveAeration')}</p>
-              </div>
-            </div>
-
-            {/* Field Monitoring Checkpoints */}
-            <div className="checkpoints-list">
-              <div className="checkpoint-row">
-                <div className="cp-badge">🌅 {t('checkpointDawn')}</div>
-                <div className="cp-desc">
-                  <strong>{t('checkpointDawnLabel')}</strong> {t('checkUndersides')}
+                {/* Official KVK & Expert Consultation Notice */}
+                <div className="expert-kvk-banner">
+                  <div className="kvk-top">
+                    <IconShieldAlert size={22} className="kvk-icon" />
+                    <div>
+                      <strong className="kvk-heading">{t('kvkNoticeHeading')}</strong>
+                      <p className="kvk-p">
+                        {recommendations?.whenToGetHelp?.referralGuidance || analysisResult.expertConsultationGuidance?.recommendation || t('kvkNotice')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="kvk-phone-badge">
+                    <span>📞</span>
+                    <strong>
+                      {recommendations?.whenToGetHelp?.helpline || analysisResult.expertConsultationGuidance?.contactChannels || t('kvkHelpline')}
+                    </strong>
+                  </div>
                 </div>
               </div>
-              <div className="checkpoint-row">
-                <div className="cp-badge">💨 {t('checkpointWind')}</div>
-                <div className="cp-desc">
-                  <strong>{t('checkpointWindLabel')}</strong> {t('checkDownwind')}
-                </div>
-              </div>
-              <div className="checkpoint-row">
-                <div className="cp-badge">⏱️ {t('checkpointDew')}</div>
-                <div className="cp-desc">
-                  <strong>{t('checkpointDewLabel')}</strong> {t('checkDewDuration')}
-                </div>
-              </div>
-            </div>
-
-            {/* CRITICAL FARMER SAFETY RULE: Chemical Pesticide Warning */}
-            <div className="chemical-safety-warning-banner" role="alert">
-              <IconShieldAlert size={22} className="chem-safety-icon" />
-              <div className="chem-safety-content">
-                <strong className="chem-safety-title">{t('chemicalSafetyHeading')}</strong>
-                <p className="chem-safety-desc">
-                  {analysisResult.chemicalDisclaimer || t('chemicalSafetyNotice')}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 6: WHEN TO SEEK EXPERT HELP (तज्ज्ञांचा सल्ला कधी घ्यावा) */}
-          <div className="farmer-report-section section-get-help">
-            <div className="frs-header">
-              <span className="frs-number">6</span>
-              <div>
-                <h4 className="frs-title">{t('section6ExpertHelpTitle')}</h4>
-                <p className="frs-sub">{t('section6ExpertHelpSub')}</p>
-              </div>
-            </div>
-
-            <div className="escalation-box">
-              <strong className="escalation-title">{t('escalationHeading')}</strong>
-              <ul className="escalation-list">
-                <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger1')}</li>
-                <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger2')}</li>
-                <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger3')}</li>
-                {(analysisResult.escalationTriggers || []).map((trig, tIdx) => (
-                  <li key={`trig-${tIdx}`}><span className="bullet-esc">⚠️</span> {trig}</li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Official KVK & Expert Consultation Notice */}
-            <div className="expert-kvk-banner">
-              <div className="kvk-top">
-                <IconShieldAlert size={22} className="kvk-icon" />
-                <div>
-                  <strong className="kvk-heading">{t('kvkNoticeHeading')}</strong>
-                  <p className="kvk-p">
-                    {analysisResult.expertConsultationGuidance?.recommendation || t('kvkNotice')}
-                  </p>
-                </div>
-              </div>
-              <div className="kvk-phone-badge">
-                <span>📞</span>
-                <strong>
-                  {analysisResult.expertConsultationGuidance?.contactChannels || t('kvkHelpline')}
-                </strong>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
 

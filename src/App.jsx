@@ -4,6 +4,8 @@ import HeroSection from './components/HeroSection';
 import WeatherMetrics from './components/WeatherMetrics';
 import CropHealthSection from './components/CropHealthSection';
 import CropImageScanner from './components/CropImageScanner';
+import CropRecoveryTracker from './components/CropRecoveryTracker';
+import VoiceFarmerAssistant from './components/VoiceFarmerAssistant';
 import CrossEvidenceSynthesizer from './components/CrossEvidenceSynthesizer';
 import AdvisorySection from './components/AdvisorySection';
 import HowItWorksSection from './components/HowItWorksSection';
@@ -24,7 +26,7 @@ import { IconMapPin, IconActivity, IconCloudRain, IconShieldAlert, IconCamera, I
 import './App.css';
 
 function App() {
-  const { t } = useApp();
+  const { t, language } = useApp();
   const [selectedLocationId, setSelectedLocationId] = useState('loc-1');
   const [selectedCropId, setSelectedCropId] = useState('potato');
 
@@ -278,8 +280,24 @@ function App() {
                 activeCropId={selectedCropId}
                 onCropChange={setSelectedCropId}
                 onAnalysisResultChange={setImageAnalysisResult}
+                liveWeather={liveWeather}
+                onOpenTracker={() => {
+                  const el = document.getElementById('recovery-tracker-section');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }}
               />
             </div>
+          </div>
+        </section>
+
+        {/* SECTION 3B: CROP RECOVERY TIMELINE TRACKER (Priority 4 Feature) */}
+        <section className="saas-section section-bg-subtle" id="recovery-tracker-section" aria-labelledby="tracker-section-heading">
+          <div className="section-container reveal-on-scroll">
+            <CropRecoveryTracker 
+              activeCropId={selectedCropId}
+              currentScanResult={imageAnalysisResult}
+              liveWeather={liveWeather}
+            />
           </div>
         </section>
 
@@ -348,6 +366,16 @@ function App() {
         isOpen={isHistoryDrawerOpen}
         onClose={() => setIsHistoryDrawerOpen(false)}
         onSelectScan={handleSelectPastScan}
+      />
+
+      {/* Voice-First Multilingual Farmer Assistant Widget (Priority 7) */}
+      <VoiceFarmerAssistant 
+        key={language}
+        currentCropId={selectedCropId}
+        currentCropName={activeCrop.name}
+        latestScan={imageAnalysisResult}
+        liveWeather={liveWeather}
+        activeLocationName={activeLocation.name}
       />
     </div>
   );
