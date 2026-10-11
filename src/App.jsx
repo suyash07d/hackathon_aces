@@ -1,34 +1,54 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
+import Navbar from './components/Navbar';
+import HeroSection from './components/HeroSection';
 import WeatherMetrics from './components/WeatherMetrics';
 import CropHealthSection from './components/CropHealthSection';
 import CropImageScanner from './components/CropImageScanner';
 import CrossEvidenceSynthesizer from './components/CrossEvidenceSynthesizer';
 import AdvisorySection from './components/AdvisorySection';
+import HowItWorksSection from './components/HowItWorksSection';
+import Footer from './components/Footer';
 import DisclaimerBanner from './components/DisclaimerBanner';
 import { fetchOpenMeteoWeather } from './services/weatherService';
 import { estimateDiseaseRisk } from './services/diseaseRiskEngine.js';
 import { generateFarmerAdvisories } from './services/advisoryService.js';
+import { checkBackendAiStatus } from './services/imageAnalysisService.js';
+import { useScrollReveal } from './hooks/useScrollReveal';
 import { 
   SAMPLE_LOCATIONS, 
   SAMPLE_CROPS 
 } from './data/sampleData';
+import { IconMapPin, IconActivity, IconCloudRain, IconShieldAlert, IconCamera, IconInfo } from './components/Icons';
 import './App.css';
 
 function App() {
   const [selectedLocationId, setSelectedLocationId] = useState('loc-1');
   const [selectedCropId, setSelectedCropId] = useState('potato');
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Live Weather API state
   const [liveWeather, setLiveWeather] = useState(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState(false);
   const [weatherApiError, setWeatherApiError] = useState(null);
 
-  // Crop image analysis state (shared across dashboard)
+  // Crop image analysis state (shared across system)
   const [imageAnalysisResult, setImageAnalysisResult] = useState(null);
+
+  // Live Backend AI connectivity status
+  const [backendAiStatus, setBackendAiStatus] = useState({ 
+    isOnline: false, 
+    geminiConfigured: false, 
+    model: null 
+  });
+
+  // Enable scroll reveal animations across sections
+  useScrollReveal();
+
+  // Check backend Gemini status on mount
+  useEffect(() => {
+    checkBackendAiStatus().then((status) => {
+      setBackendAiStatus(status);
+    });
+  }, []);
 
   // Active Location Data
   const activeLocation = useMemo(() => {
@@ -82,12 +102,12 @@ function App() {
     };
   }, [activeLocation, refreshCount]);
 
-  // PHASE 1: Dedicated Disease Risk Assessment for Selected Crop (evaluated from live weather)
+  // Dedicated Disease Risk Assessment for Selected Crop (evaluated from live weather)
   const activeCropRiskAssessment = useMemo(() => {
     return estimateDiseaseRisk(selectedCropId, liveWeather);
   }, [selectedCropId, liveWeather]);
 
-  // Dynamic Risk Map for all crops in the current location (for the crop tabs grid)
+  // Dynamic Risk Map for all crops in the current location (for crop tabs grid)
   const allCropsRiskMap = useMemo(() => {
     const map = {};
     SAMPLE_CROPS.forEach((crop) => {
@@ -96,7 +116,7 @@ function App() {
     return map;
   }, [liveWeather]);
 
-  // PHASE 2 & 4: Dedicated Farmer Advisories (synthesizing risk assessment, weather, and image findings)
+  // Dedicated Farmer Advisories (synthesizing risk assessment, weather, and image findings)
   const farmerAdvisories = useMemo(() => {
     return generateFarmerAdvisories({
       cropRisk: activeCropRiskAssessment,
@@ -106,150 +126,194 @@ function App() {
     });
   }, [activeCropRiskAssessment, liveWeather, activeCrop.name, imageAnalysisResult]);
 
-  const handleSelectTab = (tabId) => {
-    setActiveTab(tabId);
-    if (tabId === 'scanner') {
-      const el = document.getElementById('crop-scanner-section');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    } else if (tabId === 'crops') {
-      const el = document.getElementById('crop-health-heading');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    } else if (tabId === 'weather') {
-      const el = document.getElementById('weather-metrics-heading');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    } else if (tabId === 'risk') {
-      const el = document.getElementById('cross-evidence-heading') || document.getElementById('crop-health-heading');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    } else if (tabId === 'advisories') {
-      const el = document.getElementById('advisory-heading');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  // Executive Badge class helper
-  const getExecBadgeClass = (category) => {
-    switch (category) {
-      case 'Elevated':
-        return 'exec-badge-high';
-      case 'Moderate':
-        return 'exec-badge-medium';
-      case 'Undetermined (Data Incomplete)':
-        return 'exec-badge-incomplete';
-      case 'Low':
-      default:
-        return 'exec-badge-low';
-    }
-  };
-
   return (
-    <div className="app-layout">
-      {/* Sidebar Navigation */}
-      <Sidebar 
-        isOpen={isMobileMenuOpen}
-        onClose={() => setIsMobileMenuOpen(false)}
-        activeTab={activeTab}
-        onSelectTab={handleSelectTab}
+    <div className="saas-app-layout">
+      {/* 1. Transparent / Glass-Effect Sticky Navbar */}
+      <Navbar 
+        locations={SAMPLE_LOCATIONS}
+        selectedLocationId={selectedLocationId}
+        onSelectLocation={setSelectedLocationId}
+        backendAiStatus={backendAiStatus}
       />
 
-      {/* Main Content Area */}
-      <div className="main-viewport">
-        {/* Top Sample Prototype Disclaimer Banner */}
-        <DisclaimerBanner />
+      {/* 2. Full-Screen Cinematic Hero Section */}
+      <HeroSection 
+        activeLocation={activeLocation}
+        activeCrop={activeCrop}
+        cropRiskAssessment={activeCropRiskAssessment}
+        liveWeather={liveWeather}
+        backendAiStatus={backendAiStatus}
+      />
 
-        {/* Global Dashboard Header & Location Selector */}
-        <Header 
-          locations={SAMPLE_LOCATIONS}
-          selectedLocationId={selectedLocationId}
-          onSelectLocation={setSelectedLocationId}
-          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-        />
+      {/* 3. Top Prototype Disclaimer Banner */}
+      <DisclaimerBanner />
 
-        <main className="dashboard-content-container">
-          {/* Executive Quick Stats Banner */}
-          <div className="executive-summary-strip">
-            <div className="exec-item">
-              <span className="exec-label">Monitored Agri Zone</span>
-              <strong className="exec-val">{activeLocation.name}</strong>
+      {/* 4. Progressive Content Sections */}
+      <main className="saas-main-flow">
+        {/* SECTION 1: LIVE WEATHER & MICRO-CLIMATE TELEMETRY */}
+        <section className="saas-section" id="weather" aria-labelledby="weather-section-heading">
+          <div className="section-container">
+            <div className="saas-section-header reveal-on-scroll">
+              <div className="section-badge-pill pill-blue">
+                <IconCloudRain size={13} />
+                <span>ATMOSPHERIC TELEMETRY</span>
+              </div>
+              <h2 id="weather-section-heading" className="saas-section-title">
+                Micro-Climatic Observations & Environmental Vectors
+              </h2>
+              <p className="saas-section-subtitle">
+                Real-time regional telemetry ingested from Open-Meteo for <strong>{activeLocation.name}</strong> ({activeLocation.state}). Tracks air temperature, relative humidity, and precipitation thresholds essential for fungal spore germination.
+              </p>
             </div>
-            <div className="exec-divider"></div>
-            <div className="exec-item">
-              <span className="exec-label">Selected Crop Plot</span>
-              <strong className="exec-val">{activeCrop.name} ({activeCrop.icon})</strong>
+
+            {/* In-Section Quick Location Bar */}
+            <div className="section-location-bar reveal-on-scroll">
+              <div className="slb-left">
+                <IconMapPin size={16} className="slb-icon" />
+                <span className="slb-label">Switch Monitored Farm Station:</span>
+              </div>
+              <div className="slb-pills">
+                {SAMPLE_LOCATIONS.map((loc) => (
+                  <button
+                    key={loc.id}
+                    type="button"
+                    className={`slb-pill-btn ${selectedLocationId === loc.id ? 'active' : ''}`}
+                    onClick={() => setSelectedLocationId(loc.id)}
+                  >
+                    <span>{loc.name}</span>
+                    <span className="slb-pill-state">({loc.state})</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="exec-divider"></div>
-            <div className="exec-item">
-              <span className="exec-label">Disease Early Warning Status</span>
-              <span className={`exec-badge ${getExecBadgeClass(activeCropRiskAssessment.riskCategory)}`}>
-                {activeCropRiskAssessment.riskCategory} Risk
-                {activeCropRiskAssessment.riskScore !== null ? ` (${activeCropRiskAssessment.riskScore} Index)` : ''}
-              </span>
-            </div>
-            <div className="exec-divider"></div>
-            <div className="exec-item">
-              <span className="exec-label">Incubation Vulnerability Watch</span>
-              <span className="exec-threat">{activeCropRiskAssessment.targetDisease}</span>
-            </div>
-          </div>
 
-          {/* Core Module 1: Weather & Micro-Climate Metrics (Real API + Hourly Forecast) */}
-          <WeatherMetrics 
-            weather={activeLocation.weather}
-            liveWeather={liveWeather}
-            isLoading={isLoadingWeather}
-            apiError={weatherApiError}
-            onRetry={handleRefreshWeather}
-            locationName={activeLocation.name}
-          />
-
-          {/* Core Module 2: Crop Health & Disease Risk Assessment Engine (Live Agronomic Rules) */}
-          <CropHealthSection 
-            crops={SAMPLE_CROPS}
-            selectedCropId={selectedCropId}
-            onSelectCrop={setSelectedCropId}
-            locationCropData={activeLocation.crops}
-            cropRiskAssessment={activeCropRiskAssessment}
-            allCropsRiskMap={allCropsRiskMap}
-          />
-
-          {/* Core Module 3: Crop Image & Foliar Symptom Analyzer (Demo Mode with AI Architecture Blueprint) */}
-          <CropImageScanner 
-            activeCropId={selectedCropId}
-            onCropChange={setSelectedCropId}
-            onAnalysisResultChange={setImageAnalysisResult}
-          />
-
-          {/* Core Module 4: Multi-Factor Evidence Synthesizer (Cross-Correlating Weather Risk + Foliar Findings) */}
-          <CrossEvidenceSynthesizer 
-            cropRisk={activeCropRiskAssessment}
-            imageAnalysis={imageAnalysisResult}
-            cropName={activeCrop.name}
-            locationName={activeLocation.name}
-          />
-
-          {/* Core Module 5: Prioritized Preventive Advisories & Action Plans */}
-          <AdvisorySection 
-            advisories={farmerAdvisories}
-            selectedCropName={activeCrop.name}
-            dataFreshness={activeCropRiskAssessment.dataFreshness}
-          />
-        </main>
-
-        {/* Dashboard Footer */}
-        <footer className="dashboard-footer">
-          <div className="footer-content">
-            <div className="footer-left">
-              <strong>Rain Maker</strong> — Micro-Climatic Crop Disease Early Warning System
-              <p className="footer-credit">Built for Agricultural Innovation Hackathon • Open-Meteo Integration • Multi-Factor Agronomic Risk Modeling</p>
-            </div>
-            <div className="footer-right">
-              <span className="footer-badge">Rain Maker Full Integration</span>
-              <span className="footer-sub">Live Atmospheric Models • Disease Risk Engine • Farmer Advisories</span>
+            <div className="reveal-on-scroll">
+              <WeatherMetrics 
+                weather={activeLocation.weather}
+                liveWeather={liveWeather}
+                isLoading={isLoadingWeather}
+                apiError={weatherApiError}
+                onRetry={handleRefreshWeather}
+                locationName={activeLocation.name}
+              />
             </div>
           </div>
-        </footer>
-      </div>
+        </section>
+
+        {/* SECTION 2: CROP DISEASE RISK OVERVIEW */}
+        <section className="saas-section section-bg-subtle" id="risk" aria-labelledby="risk-section-heading">
+          <div className="section-container">
+            <div className="saas-section-header reveal-on-scroll">
+              <div className="section-badge-pill pill-gold">
+                <IconShieldAlert size={13} />
+                <span>BIO-METEOROLOGICAL EPIDEMIOLOGY</span>
+              </div>
+              <h2 id="risk-section-heading" className="saas-section-title">
+                Crop-Specific Disease Risk Engine
+              </h2>
+              <p className="saas-section-subtitle">
+                Algorithmic pathogen incubation assessment modeling prolonged leaf wetness, nocturnal humidity saturation, and fungal spore thresholds across major staple crops.
+              </p>
+            </div>
+
+            <div className="reveal-on-scroll">
+              <CropHealthSection 
+                crops={SAMPLE_CROPS}
+                selectedCropId={selectedCropId}
+                onSelectCrop={setSelectedCropId}
+                locationCropData={activeLocation.crops}
+                cropRiskAssessment={activeCropRiskAssessment}
+                allCropsRiskMap={allCropsRiskMap}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 3: AI CROP IMAGE SCANNER */}
+        <section className="saas-section" id="scanner" aria-labelledby="scanner-section-heading">
+          <div className="section-container">
+            <div className="saas-section-header reveal-on-scroll">
+              <div className="section-badge-pill pill-green">
+                <IconCamera size={13} />
+                <span>MULTIMODAL COMPUTER VISION</span>
+              </div>
+              <h2 id="scanner-section-heading" className="saas-section-title">
+                AI Crop Foliar Symptom Analyzer
+              </h2>
+              <p className="saas-section-subtitle">
+                Upload a field photograph of an affected crop leaf. Powered by Google Gemini 3.5 Flash multimodal vision with transparent client-side heuristic fallback and specimen suitability screening.
+              </p>
+            </div>
+
+            <div className="reveal-on-scroll">
+              <CropImageScanner 
+                activeCropId={selectedCropId}
+                onCropChange={setSelectedCropId}
+                onAnalysisResultChange={setImageAnalysisResult}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 4: CROSS-EVIDENCE ANALYSIS */}
+        <section className="saas-section section-bg-subtle" id="synthesis" aria-labelledby="synthesis-section-heading">
+          <div className="section-container">
+            <div className="saas-section-header reveal-on-scroll">
+              <div className="section-badge-pill pill-indigo">
+                <IconActivity size={13} />
+                <span>MULTI-FACTOR CORRELATION</span>
+              </div>
+              <h2 id="synthesis-section-heading" className="saas-section-title">
+                Cross-Evidence Synthesis Sentinel
+              </h2>
+              <p className="saas-section-subtitle">
+                Synthesizes pre-symptomatic atmospheric incubation telemetry with observed foliar lesion evidence to calibrate overall infection probability and distinguish abiotic stresses.
+              </p>
+            </div>
+
+            <div className="reveal-on-scroll">
+              <CrossEvidenceSynthesizer 
+                cropRisk={activeCropRiskAssessment}
+                imageAnalysis={imageAnalysisResult}
+                cropName={activeCrop.name}
+                locationName={activeLocation.name}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 5: FARMER ADVISORIES AND RECOMMENDED ACTIONS */}
+        <section className="saas-section" id="advisories" aria-labelledby="advisories-section-heading">
+          <div className="section-container">
+            <div className="saas-section-header reveal-on-scroll">
+              <div className="section-badge-pill pill-emerald">
+                <IconInfo size={13} />
+                <span>ACTIONABLE DECISION SUPPORT</span>
+              </div>
+              <h2 id="advisories-section-heading" className="saas-section-title">
+                Preventive Field Advisories & Agronomic Guidance
+              </h2>
+              <p className="saas-section-subtitle">
+                Prioritized cultural interventions, irrigation adjustments, and certified Krishi Vigyan Kendra (KVK) extension referrals to protect smallholder yields.
+              </p>
+            </div>
+
+            <div className="reveal-on-scroll">
+              <AdvisorySection 
+                advisories={farmerAdvisories}
+                selectedCropName={activeCrop.name}
+                dataFreshness={activeCropRiskAssessment.dataFreshness}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 6: HOW RAIN MAKER WORKS */}
+        <HowItWorksSection />
+      </main>
+
+      {/* 5. Deep Forest Green SaaS Footer */}
+      <Footer />
     </div>
   );
 }
