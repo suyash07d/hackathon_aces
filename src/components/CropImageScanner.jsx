@@ -25,13 +25,19 @@ import { checkImageQuality } from '../utils/imageQuality';
 import { saveScanToHistory } from '../utils/scanHistory';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import { useApp } from '../context/useApp';
+import { SUPPORTED_LANGUAGES } from '../i18n/translations';
+import { 
+  getLocalizedDisease, 
+  getLocalizedPathogen, 
+  ALTERNATIVE_EXPLANATIONS_TRANSLATIONS 
+} from '../i18n/diseaseTranslations';
 import ScanHistoryDrawer from './ScanHistoryDrawer';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 export default function CropImageScanner({ activeCropId, onCropChange, onAnalysisResultChange }) {
-  const { t, language } = useApp();
+  const { t, language, setLanguage } = useApp();
 
   // Upload and form states
   const [selectedCrop, setSelectedCrop] = useState(activeCropId || 'potato');
@@ -75,7 +81,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
   const imagePreviewRef = useRef(null);
 
   // Text-To-Speech hook
-  const { speak, stop: stopSpeech, isSpeaking, isSupported: isTtsSupported } = useTextToSpeech(language);
+  const { speak, stop: stopSpeech, isSpeaking, isSupported: isTtsSupported, voiceInfo } = useTextToSpeech(language);
 
   // Sync selectedCrop with activeCropId prop during render
   if (activeCropId && activeCropId !== prevActiveCropId) {
@@ -353,7 +359,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     onAnalysisResultChange?.(pastResult);
   };
 
-  // Text-To-Speech speech synthesizer handler (Feature 6)
+  // Text-To-Speech speech synthesizer handler (Feature 6 & Requirement 3)
   const handleToggleSpeech = () => {
     if (isSpeaking) {
       stopSpeech();
@@ -363,9 +369,14 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     if (!analysisResult) return;
 
     const cropName = analysisResult.cropName;
-    const topCand = analysisResult.candidates?.[0]?.name || t('section2NoCandidates');
+    let topCandText = t('section2NoCandidates');
+    if (analysisResult.candidates && analysisResult.candidates.length > 0) {
+      const topCandObj = analysisResult.candidates[0];
+      const locDisease = getLocalizedDisease(topCandObj.name, language);
+      topCandText = locDisease.localizedName;
+    }
     
-    // Construct structured natural phrasing for farmer
+    // Construct structured natural phrasing for farmer in active language
     let textToRead = `${t('reportHeading')}. ${cropName}. `;
     textToRead += `${t('section1Title')}: ${analysisResult.specimenLabel}. `;
     
@@ -373,12 +384,68 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
       textToRead += `${t('section1Symptoms')} ${analysisResult.userReportedSymptoms.join(', ')}. `;
     }
 
-    textToRead += `${t('section2Title')}: ${topCand}. `;
+    textToRead += `${t('section2Title')}: ${topCandText}. `;
     textToRead += `${t('section3Title')}: ${t('actionStopWatering')} ${t('actionPruneLeaves')} `;
     textToRead += `${t('section4Title')}: ${t('checkUndersides')} `;
     textToRead += `${t('section5Title')}: ${t('kvkNotice')} ${t('kvkHelpline')}`;
 
     speak(textToRead);
+  };
+
+  // Helper to determine candidate qualitative evidence strength (Requirement 2)
+  const getCandidateEvidence = (cand, isAiInference) => {
+    if (isAiInference) {
+      const tagLower = (cand.likelihoodTag || '').toLowerCase();
+      if (tagLower.includes('primary')) {
+        return {
+          level: 3,
+          label: t('evidenceStrong'),
+          engine: t('evidenceGeminiVision'),
+          cssClass: 'strength-strong',
+        };
+      }
+      if (tagLower.includes('secondary')) {
+        return {
+          level: 2,
+          label: t('evidenceModerate'),
+          engine: t('evidenceGeminiVision'),
+          cssClass: 'strength-moderate',
+        };
+      }
+      return {
+        level: 1,
+        label: t('evidenceLow'),
+        engine: t('evidenceGeminiVision'),
+        cssClass: 'strength-low',
+      };
+    }
+
+    const count = typeof cand.matchCount === 'number'
+      ? cand.matchCount
+      : (cand.matchedSymptoms?.length || 0);
+
+    if (count >= 2) {
+      return {
+        level: 3,
+        label: t('evidenceStrong'),
+        engine: t('evidenceHeuristic'),
+        cssClass: 'strength-strong',
+      };
+    }
+    if (count === 1) {
+      return {
+        level: 2,
+        label: t('evidenceModerate'),
+        engine: t('evidenceHeuristic'),
+        cssClass: 'strength-moderate',
+      };
+    }
+    return {
+      level: 1,
+      label: t('evidenceLow'),
+      engine: t('evidenceHeuristic'),
+      cssClass: 'strength-low',
+    };
   };
 
   // Progress status messages array
@@ -852,7 +919,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
       ) : (
         /* STRUCTURED 5-SECTION FARMER-FRIENDLY REPORT DISPLAY (Features 2, 6, 9) */
         <div className="analysis-results-container reveal-smooth">
-          {/* Results Top Header & TTS Read Aloud Control */}
+          {/* Results Top Header & Language Selector & TTS Read Aloud Control (Requirement 1 & 3) */}
           <div className="results-top-banner">
             <div className="banner-left">
               {analysisResult.isAiInference ? (
@@ -868,36 +935,72 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               <h3 className="results-main-title">
                 {t('reportHeading')} — {analysisResult.cropName}
               </h3>
-              <p className="results-timestamp">Evaluated at: {analysisResult.analyzedAt}</p>
+              <p className="results-timestamp">{t('evaluatedAt')} {analysisResult.analyzedAt}</p>
             </div>
 
             <div className="results-top-actions">
-              {/* Feature 6: Web Speech API Listen to Report Button */}
-              {isTtsSupported && (
-                <button
-                  type="button"
-                  className={`btn-tts-listen ${isSpeaking ? 'tts-speaking-active' : ''}`}
-                  onClick={handleToggleSpeech}
-                  title={isSpeaking ? t('stopListening') : t('listenReport')}
-                >
-                  {isSpeaking ? (
-                    <>
-                      <IconVolumeX size={17} />
-                      <span className="tts-pulse-bars">
-                        <span className="bar"></span>
-                        <span className="bar"></span>
-                        <span className="bar"></span>
-                      </span>
-                      <span>{t('stopListening')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <IconVolume size={17} />
-                      <span>{t('listenReport')}</span>
-                    </>
-                  )}
-                </button>
-              )}
+              {/* Requirement 1: Result-Page Language Selector (English / Marathi / Hindi) */}
+              <div className="results-lang-selector" aria-label={t('selectReportLang')}>
+                <span className="results-lang-label">{t('selectReportLang')}</span>
+                <div className="results-lang-btn-group" role="group">
+                  {SUPPORTED_LANGUAGES.map((langItem) => (
+                    <button
+                      key={langItem.code}
+                      type="button"
+                      className={`results-lang-btn ${language === langItem.code ? 'active' : ''}`}
+                      onClick={() => setLanguage(langItem.code)}
+                      aria-pressed={language === langItem.code}
+                    >
+                      {langItem.nativeLabel}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Requirement 3: Web Speech API Listen to Report Button with Voice Status */}
+              <div className="results-tts-wrap">
+                {isTtsSupported && (
+                  <button
+                    type="button"
+                    className={`btn-tts-listen ${isSpeaking ? 'tts-speaking-active' : ''}`}
+                    onClick={handleToggleSpeech}
+                    title={isSpeaking ? t('stopListening') : t('listenReport')}
+                  >
+                    {isSpeaking ? (
+                      <>
+                        <IconVolumeX size={17} />
+                        <span className="tts-pulse-bars">
+                          <span className="bar"></span>
+                          <span className="bar"></span>
+                          <span className="bar"></span>
+                        </span>
+                        <span>{t('stopListening')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <IconVolume size={17} />
+                        <span>{t('listenReport')}</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {/* Voice Status Indicator Pill */}
+                {isTtsSupported && voiceInfo?.note && (
+                  <span
+                    className={`voice-status-pill ${voiceInfo.isExactMatch ? 'voice-exact' : 'voice-fallback'}`}
+                    title={voiceInfo.note}
+                  >
+                    {voiceInfo.isExactMatch ? '✓ ' : 'ℹ️ '}
+                    {voiceInfo.isExactMatch ? t('ttsVoiceExact') : t('ttsVoiceFallback')}
+                  </span>
+                )}
+                {!isTtsSupported && (
+                  <span className="voice-status-pill voice-unsupported" title={t('ttsVoiceUnavailable')}>
+                    ⚠️ {t('ttsVoiceUnavailable')}
+                  </span>
+                )}
+              </div>
 
               <button 
                 type="button" 
@@ -936,13 +1039,13 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                 </div>
                 <div className="evidence-meta">
                   <div className="meta-row">
-                    <span className="meta-label">Specimen:</span>
+                    <span className="meta-label">{t('specimenMetaLabel')}</span>
                     <span className={`specimen-tag ${analysisResult.isSuitableSpecimen ? 'tag-suitable' : 'tag-unsuitable'}`}>
                       {analysisResult.specimenLabel}
                     </span>
                   </div>
                   <div className="meta-row">
-                    <span className="meta-label">Target Crop:</span>
+                    <span className="meta-label">{t('targetCropMetaLabel')}</span>
                     <strong className="meta-val">{analysisResult.cropName}</strong>
                   </div>
                 </div>
@@ -986,7 +1089,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                 {/* Farmer Observation note */}
                 {analysisResult.userNotes && analysisResult.userNotes !== 'None provided' && (
                   <div className="farmer-note-callout">
-                    <span className="notes-label">Farmer Observation:</span>
+                    <span className="notes-label">{t('farmerObservationLabel')}</span>
                     <p className="notes-body">"{analysisResult.userNotes}"</p>
                   </div>
                 )}
@@ -1015,47 +1118,118 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               </div>
             )}
 
-            {/* Disease Candidates List */}
+            {/* Disease Candidates List with Defensible Qualitative Evidence Indicators (Requirement 2) */}
             {analysisResult.candidates && analysisResult.candidates.length > 0 ? (
               <div className="candidates-grid">
-                {analysisResult.candidates.map((cand, idx) => (
-                  <div key={idx} className="candidate-card">
-                    <div className="candidate-header">
-                      <div>
-                        <h5 className="candidate-name">{cand.name}</h5>
-                        <span className="candidate-pathogen">{cand.pathogenType}</span>
-                      </div>
-                      <span className={`candidate-tag ${cand.matchScore >= 2 ? 'tag-primary' : 'tag-secondary'}`}>
-                        {cand.likelihoodTag}
-                      </span>
-                    </div>
-                    
-                    <div className="candidate-details">
-                      {cand.matchedSymptoms && cand.matchedSymptoms.length > 0 && (
-                        <div className="detail-item matched-symptoms-item">
-                          <span className="item-label">Matched Foliar Signs:</span>
-                          <div className="matched-symptoms-chips">
-                            {cand.matchedSymptoms.map((ms, i) => (
-                              <span key={i} className="matched-chip">✓ {ms}</span>
-                            ))}
+                {analysisResult.candidates.map((cand, idx) => {
+                  const locDisease = getLocalizedDisease(cand.name, language);
+                  const locPathogen = getLocalizedPathogen(cand.pathogen || cand.pathogenType, language);
+                  const evidence = getCandidateEvidence(cand, analysisResult.isAiInference);
+
+                  return (
+                    <div key={idx} className="candidate-card">
+                      <div className="candidate-header">
+                        <div className="candidate-title-block">
+                          <h5 className="candidate-name">{locDisease.displayName}</h5>
+                          {locPathogen && (
+                            <span className="candidate-pathogen">{locPathogen}</span>
+                          )}
+                        </div>
+
+                        {/* Defensible Qualitative Evidence Strength Badge & Visual Meter */}
+                        <div className={`evidence-badge-container ${evidence.cssClass}`} title={t('diagnosticsConfidenceNotice')}>
+                          <div className="evidence-meter-dots" aria-hidden="true">
+                            <span className={`meter-dot ${evidence.level >= 1 ? 'dot-active' : ''}`}></span>
+                            <span className={`meter-dot ${evidence.level >= 2 ? 'dot-active' : ''}`}></span>
+                            <span className={`meter-dot ${evidence.level >= 3 ? 'dot-active' : ''}`}></span>
+                          </div>
+                          <div className="evidence-badge-text">
+                            <span className="evidence-badge-strength">{evidence.label}</span>
+                            <span className="evidence-badge-engine">{evidence.engine}</span>
                           </div>
                         </div>
-                      )}
-                      <div className="detail-item">
-                        <span className="item-label">{t('section2Description')}</span>
-                        <p className="item-text">{cand.supportingVisualSigns}</p>
                       </div>
-                      <div className="detail-item">
-                        <span className="item-label">Distinguishing Characteristics:</span>
-                        <p className="item-text">{cand.distinguishingCharacteristics}</p>
-                      </div>
-                      <div className="detail-item">
-                        <span className="item-label">Favorable Microclimate:</span>
-                        <p className="item-text">{cand.favorableConditions}</p>
+                      
+                      <div className="candidate-details">
+                        {/* Why this candidate was suggested (Explains rationale transparently) */}
+                        <div className="why-suggested-box">
+                          <div className="why-suggested-title">
+                            <IconSparkles size={14} className="why-sparkle" />
+                            <span>{t('whySuggestedHeading')}</span>
+                          </div>
+                          <div className="why-suggested-content">
+                            {analysisResult.isAiInference ? (
+                              <>
+                                <p className="why-text-lead">{t('whySuggestedGemini')}</p>
+                                {cand.visualRationale && (
+                                  <p className="why-rationale-quote">"{cand.visualRationale}"</p>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <p className="why-text-lead">
+                                  {t('whySuggestedHeuristic', {
+                                    count: cand.matchCount || cand.matchedSymptoms?.length || 0,
+                                    symptoms: (cand.matchedSymptoms || []).join(', ') || t('section1NoSymptoms'),
+                                  })}
+                                </p>
+                                {cand.visualRationale && (
+                                  <p className="why-rationale-quote">{cand.visualRationale}</p>
+                                )}
+                                <div className="heuristic-transparency-callout">
+                                  <IconInfo size={13} />
+                                  <span>{t('heuristicDisclaimer')}</span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Matched Foliar Signs */}
+                        {cand.matchedSymptoms && cand.matchedSymptoms.length > 0 && (
+                          <div className="detail-item matched-symptoms-item">
+                            <span className="item-label">{t('matchedFoliarSigns')}</span>
+                            <div className="matched-symptoms-chips">
+                              {cand.matchedSymptoms.map((ms, i) => (
+                                <span key={i} className="matched-chip">✓ {ms}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Localized Disease Phytopathological Description */}
+                        {(locDisease.description || cand.supportingVisualSigns) && (
+                          <div className="detail-item">
+                            <span className="item-label">{t('section2Description')}</span>
+                            <p className="item-text">{locDisease.description || cand.supportingVisualSigns}</p>
+                          </div>
+                        )}
+
+                        {/* Distinguishing Characteristics */}
+                        {cand.distinguishingCharacteristics && (
+                          <div className="detail-item">
+                            <span className="item-label">{t('distinguishingFeatures')}</span>
+                            <p className="item-text">{cand.distinguishingCharacteristics}</p>
+                          </div>
+                        )}
+
+                        {/* Favorable Microclimate */}
+                        {(cand.favorableConditions || cand.favorableCondition) && (
+                          <div className="detail-item">
+                            <span className="item-label">{t('favorableConditions')}</span>
+                            <p className="item-text">{cand.favorableConditions || cand.favorableCondition}</p>
+                          </div>
+                        )}
+
+                        {/* Candidate Uncertainty Notice */}
+                        <div className="candidate-uncertainty-alert">
+                          <IconAlertCircle size={13} />
+                          <span>{t('candUncertaintyNotice')}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="no-candidates-card">
@@ -1067,6 +1241,28 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
                 </p>
               </div>
             )}
+
+            {/* Alternative Non-Disease or Abiotic Explanations */}
+            <div className="alternative-explanations-card">
+              <div className="alt-exp-header">
+                <IconInfo size={15} />
+                <strong>{t('alternativeExplanationsTitle')}</strong>
+              </div>
+              <ul className="alt-exp-list">
+                {(analysisResult.alternativeExplanations && analysisResult.alternativeExplanations.length > 0
+                  ? analysisResult.alternativeExplanations
+                  : (ALTERNATIVE_EXPLANATIONS_TRANSLATIONS[language] || ALTERNATIVE_EXPLANATIONS_TRANSLATIONS.en)
+                ).map((altExp, aIdx) => (
+                  <li key={aIdx}>
+                    <span className="alt-bullet">•</span>
+                    <span>{altExp}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="alt-exp-note">
+                ℹ️ {t('diagnosticsConfidenceNotice')}
+              </p>
+            </div>
           </div>
 
           {/* SECTION 3: WHAT YOU CAN DO NOW (तातडीने काय करावे) */}
@@ -1083,7 +1279,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               <div className="action-card">
                 <div className="action-card-header">
                   <span className="action-icon-pill pill-blue">💧</span>
-                  <strong>Irrigation Management</strong>
+                  <strong>{t('actionIrrigationHeading')}</strong>
                 </div>
                 <p className="action-card-text">{t('actionStopWatering')}</p>
               </div>
@@ -1091,7 +1287,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               <div className="action-card">
                 <div className="action-card-header">
                   <span className="action-icon-pill pill-red">✂️</span>
-                  <strong>Sanitation & Pruning</strong>
+                  <strong>{t('actionSanitationHeading')}</strong>
                 </div>
                 <p className="action-card-text">{t('actionPruneLeaves')}</p>
               </div>
@@ -1099,7 +1295,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               <div className="action-card">
                 <div className="action-card-header">
                   <span className="action-icon-pill pill-amber">🧼</span>
-                  <strong>Tool Sterilization</strong>
+                  <strong>{t('actionSterilizationHeading')}</strong>
                 </div>
                 <p className="action-card-text">{t('actionSanitizeTools')}</p>
               </div>
@@ -1107,7 +1303,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               <div className="action-card">
                 <div className="action-card-header">
                   <span className="action-icon-pill pill-green">🌬️</span>
-                  <strong>Canopy Aeration</strong>
+                  <strong>{t('actionAerationHeading')}</strong>
                 </div>
                 <p className="action-card-text">{t('actionImproveAeration')}</p>
               </div>
@@ -1126,21 +1322,21 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
 
             <div className="checkpoints-list">
               <div className="checkpoint-row">
-                <div className="cp-badge">🌅 Dawn Check</div>
+                <div className="cp-badge">🌅 {t('checkpointDawn')}</div>
                 <div className="cp-desc">
-                  <strong>Leaf Underside Inspection:</strong> {t('checkUndersides')}
+                  <strong>{t('checkpointDawnLabel')}</strong> {t('checkUndersides')}
                 </div>
               </div>
               <div className="checkpoint-row">
-                <div className="cp-badge">💨 Wind Vector</div>
+                <div className="cp-badge">💨 {t('checkpointWind')}</div>
                 <div className="cp-desc">
-                  <strong>Downwind Canopy Scouting:</strong> {t('checkDownwind')}
+                  <strong>{t('checkpointWindLabel')}</strong> {t('checkDownwind')}
                 </div>
               </div>
               <div className="checkpoint-row">
-                <div className="cp-badge">⏱️ Wetness Hours</div>
+                <div className="cp-badge">⏱️ {t('checkpointDew')}</div>
                 <div className="cp-desc">
-                  <strong>Morning Dew Persistence:</strong> {t('checkDewDuration')}
+                  <strong>{t('checkpointDewLabel')}</strong> {t('checkDewDuration')}
                 </div>
               </div>
             </div>
@@ -1157,7 +1353,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             </div>
 
             <div className="escalation-box">
-              <strong className="escalation-title">Field Escalation Triggers (Call Extension Officers If):</strong>
+              <strong className="escalation-title">{t('escalationHeading')}</strong>
               <ul className="escalation-list">
                 <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger1')}</li>
                 <li><span className="bullet-esc">⚠️</span> {t('escalationTrigger2')}</li>
@@ -1170,7 +1366,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               <div className="kvk-top">
                 <IconShieldAlert size={22} className="kvk-icon" />
                 <div>
-                  <strong className="kvk-heading">Certified Agricultural Advisory Notice:</strong>
+                  <strong className="kvk-heading">{t('kvkNoticeHeading')}</strong>
                   <p className="kvk-p">{t('kvkNotice')}</p>
                 </div>
               </div>

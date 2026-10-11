@@ -6250,5 +6250,320 @@
     flex-direction: column;
     gap: 6px;
   }
+
+  .results-top-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .results-lang-selector {
+    justify-content: space-between;
+  }
+
+  .results-tts-wrap {
+    flex-wrap: wrap;
+  }
 }
+
+/* =====================================================================
+   Results Page Language Selector & Disease Confidence Indicators
+===================================================================== */
+.results-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.results-lang-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-subtle, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 4px 10px;
+}
+
+.results-lang-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-subtle);
+  white-space: nowrap;
+}
+
+.results-lang-btn-group {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.results-lang-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.results-lang-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.results-lang-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  box-shadow: 0 1px 4px rgba(21, 128, 61, 0.3);
+}
+
+/* TTS Read-Aloud & Voice Status Badge */
+.results-tts-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.voice-status-pill.voice-exact {
+  background-color: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+}
+
+.voice-status-pill.voice-fallback {
+  background-color: rgba(234, 179, 8, 0.15);
+  color: #ca8a04;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.voice-status-pill.voice-unsupported {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Candidate Title Block & Defensible Qualitative Evidence Badge */
+.candidate-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.evidence-badge-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.evidence-meter-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meter-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: rgba(148, 163, 184, 0.3);
+  transition: all 0.2s ease;
+}
+
+.meter-dot.dot-active {
+  box-shadow: 0 0 6px currentColor;
+}
+
+.evidence-badge-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.evidence-badge-strength {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.evidence-badge-engine {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+/* Evidence Levels */
+.evidence-badge-container.strength-strong {
+  background: rgba(22, 163, 74, 0.12);
+  border-color: rgba(22, 163, 74, 0.35);
+  color: #16a34a;
+}
+.evidence-badge-container.strength-strong .meter-dot.dot-active {
+  background-color: #16a34a;
+  color: #16a34a;
+}
+
+.evidence-badge-container.strength-moderate {
+  background: rgba(234, 179, 8, 0.12);
+  border-color: rgba(234, 179, 8, 0.35);
+  color: #ca8a04;
+}
+.evidence-badge-container.strength-moderate .meter-dot.dot-active {
+  background-color: #ca8a04;
+  color: #ca8a04;
+}
+
+.evidence-badge-container.strength-low {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text-muted);
+}
+.evidence-badge-container.strength-low .meter-dot.dot-active {
+  background-color: #94a3b8;
+  color: #94a3b8;
+}
+
+/* Why This Candidate Was Suggested Rationale Box */
+.why-suggested-box {
+  background: var(--bg-subtle, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.why-suggested-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.why-sparkle {
+  color: var(--primary);
+}
+
+.why-suggested-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.why-text-lead {
+  font-size: 12.5px;
+  color: var(--text-main);
+  margin: 0;
+  line-height: 1.45;
+}
+
+.why-rationale-quote {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+}
+
+.heuristic-transparency-callout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-subtle);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  margin-top: 4px;
+}
+
+/* Candidate Uncertainty Alert */
+.candidate-uncertainty-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-sm);
+  color: #d97706;
+  font-size: 11.5px;
+  line-height: 1.4;
+  margin-top: 6px;
+}
+
+/* Alternative Explanations Card */
+.alternative-explanations-card {
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.alt-exp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.alt-exp-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alt-exp-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.alt-bullet {
+  color: var(--primary);
+  font-weight: bold;
+}
+
+.alt-exp-note {
+  font-size: 11px;
+  color: var(--text-subtle);
+  margin: 4px 0 0;
+  font-style: italic;
+}
+
 
