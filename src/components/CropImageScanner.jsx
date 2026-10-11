@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   IconUpload, 
   IconCamera, 
@@ -13,7 +13,8 @@ import {
   SYMPTOM_OPTIONS, 
   SPECIMEN_TYPES,
   SAMPLE_PRESET_IMAGES, 
-  analyzeCropImage 
+  analyzeCropImage,
+  checkBackendAiStatus 
 } from '../services/imageAnalysisService';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -29,6 +30,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
   // Image file states
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [base64Payload, setBase64Payload] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState(null);
 
@@ -38,11 +40,21 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
   // Architecture blueprint drawer toggle
   const [showAiBackendInfo, setShowAiBackendInfo] = useState(false);
 
+  // Live Backend AI connectivity status
+  const [backendAiStatus, setBackendAiStatus] = useState({ isOnline: false, geminiConfigured: false, model: null });
+
   // Analysis states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
 
   const fileInputRef = useRef(null);
+
+  // Check backend Gemini status on mount
+  useEffect(() => {
+    checkBackendAiStatus().then((status) => {
+      setBackendAiStatus(status);
+    });
+  }, []);
 
   // Handle file validation and loading
   const processFile = (inputFile) => {
@@ -63,6 +75,44 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     setFile(inputFile);
     const objectUrl = URL.createObjectURL(inputFile);
     setPreviewUrl(objectUrl);
+
+    // Read and optimize image for serverless transmission (max 1600px, JPEG 0.85)
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = event.target?.result;
+      if (!rawDataUrl || typeof rawDataUrl !== 'string') return;
+
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 1600;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setBase64Payload(compressedDataUrl);
+        } else {
+          setBase64Payload(rawDataUrl);
+        }
+      };
+      img.onerror = () => {
+        setBase64Payload(rawDataUrl);
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(inputFile);
   };
 
   const handleFileInputChange = (e) => {
@@ -93,6 +143,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     }
     setFile(null);
     setPreviewUrl(null);
+    setBase64Payload(null);
     setUploadError(null);
     setShowNoSymptomsPrompt(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -116,6 +167,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
     setSelectedSymptoms(preset.symptoms);
     setNotes(preset.notes);
     setUploadError(null);
+    setBase64Payload(null);
     setShowNoSymptomsPrompt(false);
 
     // Create an inline sample canvas SVG preview for presets
@@ -163,6 +215,7 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
           size: file?.size || 1024 * 1024,
           type: file?.type || 'image/jpeg',
           previewUrl,
+          base64Payload,
         },
       });
       setAnalysisResult(result);
@@ -200,10 +253,22 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
         </div>
 
         <div className="scanner-header-badges-wrap">
-          <div className="scanner-header-badge badge-ai-unconfigured">
-            <span className="ai-dot dot-gray"></span>
-            <span>AI Vision Provider: Unconfigured (Running Heuristic Mode)</span>
-          </div>
+          {backendAiStatus.isOnline && backendAiStatus.geminiConfigured ? (
+            <div className="scanner-header-badge badge-ai-configured">
+              <span className="ai-dot dot-green"></span>
+              <span>Gemini Vision AI: Connected ({backendAiStatus.model || 'Gemini 3.5 Flash'})</span>
+            </div>
+          ) : backendAiStatus.isOnline ? (
+            <div className="scanner-header-badge badge-ai-unconfigured">
+              <span className="ai-dot dot-amber"></span>
+              <span>Backend Server: Online (GEMINI_API_KEY Not Set)</span>
+            </div>
+          ) : (
+            <div className="scanner-header-badge badge-ai-unconfigured">
+              <span className="ai-dot dot-gray"></span>
+              <span>AI Vision Backend: Offline (Running Heuristic Mode)</span>
+            </div>
+          )}
           <button
             type="button"
             className="btn-toggle-ai-info"
@@ -559,7 +624,16 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
         <div className="analysis-results-container">
           <div className="results-top-banner">
             <div className="banner-left">
-              <span className="badge-demo-mode">Prototype Demo Assessment</span>
+              {analysisResult.isAiInference ? (
+                <span className="badge-ai-mode">
+                  <span className="ai-dot dot-green"></span>
+                  Genuine Multimodal AI Inference • {analysisResult.aiModel || 'Gemini 3.5 Flash'}
+                </span>
+              ) : (
+                <span className="badge-demo-mode">
+                  Rule-Assisted Heuristic Match • Prototype Demo Mode
+                </span>
+              )}
               <h3 className="results-main-title">
                 Symptom Evaluation for {analysisResult.cropName}
               </h3>
@@ -575,12 +649,31 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
             </button>
           </div>
 
+          {/* Model-Observed Visual Features Banner (When Genuine Gemini AI Ran) */}
+          {analysisResult.isAiInference && analysisResult.observedVisualFeatures && analysisResult.observedVisualFeatures.length > 0 && (
+            <div className="model-features-banner">
+              <div className="psb-header">
+                <IconCamera size={16} />
+                <strong className="psb-title">Gemini Model-Observed Visual Features:</strong>
+                <span className="psb-source-tag tag-model">Source: Gemini Multimodal Vision (Pixel Morphology)</span>
+              </div>
+              <ul className="model-features-list">
+                {analysisResult.observedVisualFeatures.map((feat, idx) => (
+                  <li key={idx}>
+                    <span className="feat-bullet">•</span>
+                    <span>{feat}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Prominent Symptom Evidence Banner at Top */}
           <div className="prominent-symptoms-banner">
             <div className="psb-header">
               <IconInfo size={16} />
               <strong className="psb-title">User-Reported Observable Symptoms:</strong>
-              <span className="psb-source-tag">Source: User Selection (Not extracted by computer-vision)</span>
+              <span className="psb-source-tag">Source: User Declaration</span>
             </div>
             <div className="psb-chips-wrap">
               {analysisResult.userReportedSymptoms && analysisResult.userReportedSymptoms.length > 0 ? (
@@ -596,6 +689,24 @@ export default function CropImageScanner({ activeCropId, onCropChange, onAnalysi
               )}
             </div>
           </div>
+
+          {/* Alternative Explanations Banner */}
+          {analysisResult.alternativeExplanations && analysisResult.alternativeExplanations.length > 0 && (
+            <div className="alternative-explanations-box">
+              <div className="alt-header">
+                <IconInfo size={15} />
+                <strong className="alt-title">Alternative Non-Disease or Abiotic Explanations:</strong>
+              </div>
+              <ul className="alt-list">
+                {analysisResult.alternativeExplanations.map((alt, idx) => (
+                  <li key={idx}>
+                    <span className="alt-bullet">ℹ</span>
+                    <span>{alt}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Transparency Disclaimer Box */}
           <div className="transparency-callout">

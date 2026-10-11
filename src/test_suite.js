@@ -16,6 +16,7 @@
 import { estimateDiseaseRisk, RISK_CATEGORIES } from './services/diseaseRiskEngine.js';
 import { generateFarmerAdvisories } from './services/advisoryService.js';
 import { analyzeCropImage } from './services/imageAnalysisService.js';
+import { handleCropVisionAnalysis } from '../server/cropVisionHandler.js';
 
 let passed = 0;
 let failed = 0;
@@ -235,6 +236,83 @@ async function runTestSuite() {
     imageAnalysis: symptomScan,
   });
   assert(legacyAdvisories[0].category === 'Cross-Evidence Analysis', 'Low weather + symptoms yields Legacy/Abiotic Analysis advisory');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 10: Server Vision Handler Validation & Unconfigured Fallback
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 10] Server Vision Handler Validation & Fallback Guardrails');
+
+  function createMockReqRes(body, method = 'POST') {
+    let statusCode = 200;
+    let responseData = null;
+    return {
+      req: { method, body },
+      res: {
+        status(code) {
+          statusCode = code;
+          return this;
+        },
+        json(data) {
+          responseData = data;
+          return this;
+        },
+      },
+      getStatusCode: () => statusCode,
+      getData: () => responseData,
+    };
+  }
+
+  // 10.1 Method not allowed
+  const getReq = createMockReqRes({}, 'GET');
+  await handleCropVisionAnalysis(getReq.req, getReq.res);
+  assert(getReq.getStatusCode() === 405, 'Non-POST request returns 405 Method Not Allowed');
+  assert(getReq.getData().error === 'METHOD_NOT_ALLOWED', 'Error code is METHOD_NOT_ALLOWED');
+
+  // 10.2 Unsupported crop
+  const badCropReq = createMockReqRes({ cropId: 'cotton', imageBase64: 'dGVzdA==' });
+  await handleCropVisionAnalysis(badCropReq.req, badCropReq.res);
+  assert(badCropReq.getStatusCode() === 400, 'Unsupported cropId returns 400 Bad Request');
+  assert(badCropReq.getData().error === 'INVALID_CROP_TYPE', 'Error code is INVALID_CROP_TYPE');
+
+  // 10.3 Missing image data
+  const missingImgReq = createMockReqRes({ cropId: 'potato' });
+  await handleCropVisionAnalysis(missingImgReq.req, missingImgReq.res);
+  assert(missingImgReq.getStatusCode() === 400, 'Missing image returns 400 Bad Request');
+  assert(missingImgReq.getData().error === 'MISSING_IMAGE_DATA', 'Error code is MISSING_IMAGE_DATA');
+
+  // 10.4 Invalid MIME type
+  const badMimeReq = createMockReqRes({ cropId: 'potato', imageBase64: 'dGVzdA==', mimeType: 'image/gif' });
+  await handleCropVisionAnalysis(badMimeReq.req, badMimeReq.res);
+  assert(badMimeReq.getStatusCode() === 400, 'Unsupported MIME type returns 400 Bad Request');
+  assert(badMimeReq.getData().error === 'INVALID_MIME_TYPE', 'Error code is INVALID_MIME_TYPE');
+
+  // 10.5 Server-side harvested produce screening
+  const harvestedReq = createMockReqRes({ cropId: 'potato', specimenType: 'harvested_produce', imageBase64: 'dGVzdA==' });
+  await handleCropVisionAnalysis(harvestedReq.req, harvestedReq.res);
+  assert(harvestedReq.getStatusCode() === 200, 'Harvested produce returns 200 OK with unsuitability notice');
+  assert(harvestedReq.getData().isSuitableSpecimen === false, 'Harvested produce marked isSuitableSpecimen = false on server');
+  assert(harvestedReq.getData().candidates.length === 0, 'No candidate diseases proposed on server for harvested produce');
+
+  // 10.6 Unconfigured GEMINI_API_KEY graceful 503 fallback
+  const validFoliarReq = createMockReqRes({
+    cropId: 'potato',
+    specimenType: 'leaf',
+    imageBase64: 'dGVzdA==',
+    userSymptoms: ['water_soaked'],
+  });
+  // Ensure unconfigured test case by clearing or checking process.env.GEMINI_API_KEY
+  const originalKey = process.env.GEMINI_API_KEY;
+  try {
+    delete process.env.GEMINI_API_KEY;
+    await handleCropVisionAnalysis(validFoliarReq.req, validFoliarReq.res);
+    assert(validFoliarReq.getStatusCode() === 503, 'Unconfigured GEMINI_API_KEY returns 503 Service Unavailable');
+    assert(validFoliarReq.getData().error === 'GEMINI_API_KEY_NOT_CONFIGURED', 'Error code is GEMINI_API_KEY_NOT_CONFIGURED');
+    assert(validFoliarReq.getData().fallbackToHeuristic === true, 'Response flags fallbackToHeuristic = true');
+  } finally {
+    if (originalKey !== undefined) {
+      process.env.GEMINI_API_KEY = originalKey;
+    }
+  }
 
   // -------------------------------------------------------------------------
   // SUMMARY
