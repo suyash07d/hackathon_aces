@@ -127,20 +127,29 @@ export async function handleCropVisionAnalysis(req, res) {
     return res.status(200).json({
       success: true,
       isAiInference: false,
+      isPlantCrop: true,
       isSuitableSpecimen: false,
+      validationStatus: isHarvested ? 'harvested_produce' : 'unrelated_image',
       specimenType,
       specimenLabel: isHarvested ? 'Harvested Produce / Tuber' : 'Non-Foliar View',
-      unsuitabilityNotice: isHarvested
+      isHealthy: false,
+      healthyExplanation: '',
+      specimenAssessment: isHarvested
         ? 'The image was declared as harvested produce (e.g. tubers or fruit). Rain Maker foliar canopy screening requires clear, close-up photos of living plant leaves or stems.'
         : 'The image was declared as a non-foliar or distant field view. Foliar disease analysis requires a close-up photo of affected plant foliage.',
       observedVisualFeatures: [],
       candidates: [],
-      uncertainties: ['Post-harvest produce diagnostics require tuber/fruit rot inspection rather than foliar canopy blights.'],
-      scoutingAndCulturalSteps: [
+      conflictingCandidates: false,
+      uncertaintyExplanation: 'Post-harvest produce diagnostics require tuber/fruit rot inspection rather than foliar canopy blights.',
+      alternativeAbioticCauses: ['Post-harvest mechanical abrasions or transit bruising.'],
+      culturalPractices: [
         'Take a close-up photograph of living crop leaves showing discoloration or lesions in the field.',
         'If investigating tuber rot, store produce in cool, well-ventilated dry storage and consult local horticulture officers.',
       ],
-      expertConsultationAdvice: 'For post-harvest storage decay or seed tuber inspection, consult your district agriculture office with a physical specimen.',
+      escalationTriggers: [
+        'If tubers develop foul-smelling soft rot in storage, isolate affected sacks immediately.',
+      ],
+      expertConsultationAdvice: 'For post-harvest storage decay or seed tuber inspection, consult your district agriculture office or Krishi Vigyan Kendra (KVK) with a physical specimen.',
     });
   }
 
@@ -155,32 +164,58 @@ export async function handleCropVisionAnalysis(req, res) {
     });
   }
 
-  // 6. Execute Genuine Gemini Multimodal Vision Inference
+  // 6. Execute Genuine Gemini Multimodal Vision Inference with 4-Stage Diagnostic Guardrails
   try {
     const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
 
-    const systemPrompt = `You are an expert plant pathologist and agricultural diagnostic specialist assisting farmers and field extension workers in India and South Asia.
+    const systemPrompt = `You are an expert plant pathologist and agricultural diagnostic specialist assisting smallholder farmers in India and South Asia.
 Target Crop: ${normalizedCropId.toUpperCase()} (${cropId})
 User-Reported Symptoms: ${Array.isArray(userSymptoms) && userSymptoms.length > 0 ? userSymptoms.join(', ') : 'None declared by user'}
 User Field Notes: ${userNotes || 'None provided'}
 
-Your task is to analyze the attached crop image with scientific rigor, empathy for farmers, and strict agricultural safety guardrails:
+Analyze the attached image strictly adhering to the 4 diagnostic stages and agricultural safety guardrails:
 
-CRITICAL INSTRUCTIONS:
-1. SPECIMEN CHECK: First verify if the image actually shows plant foliage/leaf/stem of ${normalizedCropId}. If it shows harvested tubers/potatoes, picked fruit, non-plant objects, or distant unreadable vistas, mark "isSuitableSpecimen": false and explain why.
-2. DISTINGUISH EVIDENCE: Clearly distinguish between visual features YOU OBSERVE directly in the image pixels versus symptoms the user declared in text. Do not invent symptoms not visible in the image.
-3. DISEASE CANDIDATES: Identify tentative disease candidates that match the visual lesion morphology on ${normalizedCropId}. Provide qualitative likelihood ("Primary Visual Match" or "Secondary Possibility"). NEVER invent statistical confidence percentages.
-4. ALTERNATIVE EXPLANATIONS: Mention alternative non-disease causes that could produce similar symptoms (e.g. nitrogen deficiency, potassium deficiency, sunburn, thrips feeding, herbicide drift).
-5. UNCERTAINTIES & BOUNDARIES: Explicitly document visual uncertainties (e.g. lighting shadows, resolution limits, inability to inspect lower leaf surface or isolate spores without a microscope).
-6. SAFE ACTIONABLE NEXT STEPS: Provide practical, preventive cultural field steps (e.g. canopy aeration, avoiding overhead watering, sanitation).
-7. SAFETY RULES:
-   - NEVER claim that this visual image confirms a definitive phytopathological diagnosis.
-   - NEVER prescribe chemical pesticide dosages (e.g. do not state "spray 2.5 ml of mancozeb per liter").
-   - Always recommend confirming severe symptoms with a local Krishi Vigyan Kendra (KVK) or agricultural extension specialist with a physical specimen.
+STAGE 1: IMAGE VALIDATION
+- Determine if the image contains real agricultural plant foliage/crop tissue ("isPlantCrop": true/false).
+- If it shows an unrelated object (person, animal, vehicle, building, furniture, empty field, indoor object, etc.), set "isPlantCrop": false, "isSuitableSpecimen": false, "validationStatus": "unrelated_image", and explain why in "specimenAssessment".
+- If it shows harvested tubers/potatoes or picked fruit instead of foliage, set "isPlantCrop": true, "isSuitableSpecimen": false, "validationStatus": "harvested_produce", and explain that foliar screening requires living leaves.
+- If the image is too blurry, dark, or low quality to evaluate, set "isSuitableSpecimen": false, "validationStatus": "inconclusive_quality".
 
-Return ONLY a valid, parseable JSON object matching this schema:
+STAGE 2: PLANT IDENTIFICATION & HEALTH STATUS
+- Identify the plant species visible in the image ("identifiedSpecies"). Note if it matches ${normalizedCropId} ("speciesMatchesTarget": true/false).
+- Assess baseline foliar health ("isHealthy": true/false).
+- CRITICAL: If the leaves appear healthy with no active disease lesions, chlorosis, or necrotic spots, set "isHealthy": true, "candidates": [], and explain in "healthyExplanation" that the foliage appears healthy. NEVER force a disease result on healthy plants!
+
+STAGE 3: EVIDENCE-BASED DISEASE DETECTION (IF SICK/LESIONS PRESENT)
+- Confirmed Observations vs Possible Explanations:
+  - Document what is directly confirmed in the pixels ("observedVisualFeatures").
+  - Do NOT invent symptoms that are not visible.
+- Suggest tentative candidate diseases strictly as POSSIBILITIES, NEVER as confirmed diagnoses ("likelihoodTag": "Primary Possibility" | "Secondary Possibility" | "Tentative Possibility").
+- For each candidate:
+  - "name": Common name and scientific pathogen in parentheses.
+  - "pathogen": Pathogen type (e.g. Oomycete, Fungus, Bacterium, Virus).
+  - "likelihoodTag": Qualitative possibility tag. NEVER invent probability percentages.
+  - "visualEvidencePresent": Exactly what visual signs in the image support this candidate.
+  - "evidenceMissingOrUncertain": Exactly what evidence cannot be verified from a photo (e.g. microscopic spore examination, fungal fruiting structures, internal vascular discoloration).
+  - "differentialComparison": If multiple diseases share similar symptoms, explain the overlap and why visual diagnosis is inconclusive.
+- Flag "conflictingCandidates": true if multiple diseases have overlapping visual manifestations.
+- Provide "alternativeAbioticCauses" (e.g. nitrogen deficiency, potassium scorch, herbicide drift, heat stress).
+
+STAGE 4: FARMER RECOMMENDATIONS & SAFETY
+- Provide safe, practical cultural practices only ("culturalPractices").
+- STRICT SAFETY GUARDRAIL: NEVER invent synthetic pesticide names, chemical fungicides, or application dosages.
+- Always recommend consulting a local Krishi Vigyan Kendra (KVK) or extension officer with a physical leaf sample.
+- Include "escalationTriggers" (when the farmer must call extension officers immediately).
+
+Return ONLY valid JSON matching this schema:
 {
+  "isPlantCrop": boolean,
   "isSuitableSpecimen": boolean,
+  "validationStatus": "valid_foliar" | "unrelated_image" | "harvested_produce" | "inconclusive_quality",
+  "identifiedSpecies": string,
+  "speciesMatchesTarget": boolean,
+  "isHealthy": boolean,
+  "healthyExplanation": string,
   "specimenAssessment": string,
   "observedVisualFeatures": string[],
   "modelObservedSymptoms": string[],
@@ -189,13 +224,17 @@ Return ONLY a valid, parseable JSON object matching this schema:
       "name": string,
       "pathogen": string,
       "likelihoodTag": string,
-      "visualRationale": string,
+      "visualEvidencePresent": string,
+      "evidenceMissingOrUncertain": string,
+      "differentialComparison": string,
       "matchedSymptoms": string[]
     }
   ],
-  "alternativeExplanations": string[],
-  "uncertainties": string[],
-  "scoutingAndCulturalSteps": string[],
+  "conflictingCandidates": boolean,
+  "uncertaintyExplanation": string,
+  "alternativeAbioticCauses": string[],
+  "culturalPractices": string[],
+  "escalationTriggers": string[],
   "expertConsultationAdvice": string
 }`;
 
@@ -226,7 +265,7 @@ Return ONLY a valid, parseable JSON object matching this schema:
           ],
           config: {
             responseMimeType: 'application/json',
-            temperature: 0.2, // Low temperature for factual, consistent diagnostic reasoning
+            temperature: 0.15, // Low temperature for consistent, factual diagnostic reasoning
           },
         });
 
@@ -255,18 +294,38 @@ Return ONLY a valid, parseable JSON object matching this schema:
       parsedData = JSON.parse(stripped);
     }
 
-    // Validate mandatory keys
-    const isSuitable = Boolean(parsedData.isSuitableSpecimen);
-    const candidates = Array.isArray(parsedData.candidates) ? parsedData.candidates : [];
+    // Validate mandatory keys and enforce strict safety guardrails
+    const isPlant = parsedData.isPlantCrop !== false;
+    const isSuitable = Boolean(parsedData.isSuitableSpecimen) && isPlant;
+    const isHealthy = Boolean(parsedData.isHealthy);
+    const validationStatus = parsedData.validationStatus || (isSuitable ? 'valid_foliar' : (!isPlant ? 'unrelated_image' : 'unsuitable_view'));
+
+    // Strict safety rule: If unrelated image, harvested produce, or healthy plant, candidates MUST be empty!
+    let candidates = Array.isArray(parsedData.candidates) ? parsedData.candidates : [];
+    if (!isPlant || !isSuitable || isHealthy) {
+      candidates = [];
+    }
+
     const observedVisualFeatures = Array.isArray(parsedData.observedVisualFeatures)
       ? parsedData.observedVisualFeatures
       : [];
     const uncertainties = Array.isArray(parsedData.uncertainties)
       ? parsedData.uncertainties
       : ['Visual image inspection alone cannot replace laboratory culturing or microscopic verification.'];
-    const scoutingAndCulturalSteps = Array.isArray(parsedData.scoutingAndCulturalSteps)
-      ? parsedData.scoutingAndCulturalSteps
-      : ['Inspect lower canopy leaves and verify furrow drainage.'];
+
+    // Strip any accidental synthetic pesticide dosage instructions from culturalPractices to preserve safety
+    const culturalPractices = (Array.isArray(parsedData.culturalPractices) ? parsedData.culturalPractices : [
+      'Avoid overhead sprinkler irrigation; transition to early-morning furrow or drip irrigation.',
+      'Carefully remove and safely bag severely blighted lower canopy leaves; do not leave in furrows.',
+      'Sterilize shears, sickles, and harvesting tools between plant rows.',
+      'Ensure adequate row spacing and weed control to promote canopy aeration.'
+    ]).filter(step => !/\b(\d+\s*(?:ml|g|gm|kg|litre|liter|ppm)\b|\b(?:mancozeb|chlorothalonil|carbendazim|copper oxychloride|propiconazole|metalaxyl)\s*\d+)/i.test(step));
+
+    const escalationTriggers = Array.isArray(parsedData.escalationTriggers) ? parsedData.escalationTriggers : [
+      'If more than 15% of your crop canopy shows expanding spots or lesions within 48 hours.',
+      'If plants continue wilting rapidly even though the soil is sufficiently moist.',
+      'If spots turn black and spread across stems and growing shoots.',
+    ];
 
     return res.status(200).json({
       success: true,
@@ -274,18 +333,32 @@ Return ONLY a valid, parseable JSON object matching this schema:
       aiProvider: 'Google Gemini Vision (Official @google/genai SDK)',
       aiModel: selectedModel,
       analyzedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      isPlantCrop: isPlant,
       isSuitableSpecimen: isSuitable,
+      validationStatus,
       specimenType,
-      specimenLabel: isSuitable ? 'Foliar Leaf Specimen (AI Verified)' : 'Unsuitable Specimen View',
+      specimenLabel: !isPlant
+        ? 'Unrelated Image (Non-Plant)'
+        : isSuitable
+          ? 'Foliar Leaf Specimen (AI Verified)'
+          : 'Unsuitable Specimen View',
+      identifiedSpecies: parsedData.identifiedSpecies || normalizedCropId,
+      speciesMatchesTarget: parsedData.speciesMatchesTarget !== false,
+      isHealthy,
+      healthyExplanation: parsedData.healthyExplanation || (isHealthy ? 'Foliage appears visibly healthy with no active pathogen lesions or chlorosis detected.' : ''),
       specimenAssessment: parsedData.specimenAssessment || (isSuitable ? 'Foliar canopy view inspected.' : 'Image not suitable for foliar diagnosis.'),
       observedVisualFeatures,
       modelObservedSymptoms: Array.isArray(parsedData.modelObservedSymptoms) ? parsedData.modelObservedSymptoms : [],
       candidates,
-      alternativeExplanations: Array.isArray(parsedData.alternativeExplanations) ? parsedData.alternativeExplanations : [],
+      conflictingCandidates: Boolean(parsedData.conflictingCandidates),
+      uncertaintyExplanation: parsedData.uncertaintyExplanation || 'Foliar symptoms may overlap across bacterial and fungal pathogens, or mimic abiotic physiological stress.',
+      alternativeAbioticCauses: Array.isArray(parsedData.alternativeAbioticCauses) ? parsedData.alternativeAbioticCauses : [],
       uncertainties,
-      scoutingAndCulturalSteps,
-      expertConsultationAdvice: parsedData.expertConsultationAdvice || 'Consult your local Krishi Vigyan Kendra (KVK) with a physical plant sample for laboratory confirmation.',
-      disclaimer: 'Notice: Google Gemini AI vision analysis provides decision-support observations based on visible leaf morphology. It does not constitute a certified laboratory phytopathological diagnosis.',
+      culturalPractices,
+      escalationTriggers,
+      expertConsultationAdvice: parsedData.expertConsultationAdvice || 'Consult your local Krishi Vigyan Kendra (KVK) or State Agricultural Extension Office with a physical plant sample for certified confirmation.',
+      chemicalDisclaimer: 'Do not apply chemical fungicides or synthetic pesticides based solely on visual inspection. For certified chemical recommendations and exact dosages, always consult your nearest Krishi Vigyan Kendra (KVK).',
+      disclaimer: 'Notice: Google Gemini AI vision analysis provides preliminary decision-support observations based on visible leaf morphology. It does not constitute a certified laboratory phytopathological diagnosis.',
     });
   } catch (err) {
     console.error('Gemini Vision Inference Error:', err.message || err);

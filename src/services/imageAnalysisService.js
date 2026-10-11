@@ -67,6 +67,7 @@ export const SAMPLE_PRESET_IMAGES = [
 ];
 
 // Knowledge base for transparent rule-assisted heuristic fallback
+// Knowledge base for transparent rule-assisted heuristic fallback
 export const DISEASE_KNOWLEDGE_BASE = {
   potato: [
     {
@@ -76,6 +77,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['water_soaked', 'brown_spots', 'yellowing'],
       favorableCondition: 'Prolonged high humidity (>85%) with mild temperatures (15–21°C).',
       visualMarkers: 'Large, irregular water-soaked dark lesions on leaves, often with pale yellow borders and white mold on undersides during high humidity.',
+      missingEvidence: 'Cannot confirm microscopic sporangia or oospores from photo pixels alone; requires morning dew field inspection of leaf underside.',
+      differentialComparison: 'Lesions resemble Early Blight in late necrosis, but Late Blight lacks concentric target rings and features expanding pale water-soaked borders.',
       severityDefault: 'High (Immediate Action Required)',
     },
     {
@@ -85,6 +88,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['brown_spots', 'yellowing'],
       favorableCondition: 'Warm temperatures (24–29°C) with alternating wet and dry periods.',
       visualMarkers: 'Dark brown, dry, concentric circular rings ("target-board" pattern) primarily on older lower leaves.',
+      missingEvidence: 'Concentric ring morphology indicates Alternaria, but conidiophore formation requires laboratory microscopic verification.',
+      differentialComparison: 'Concentric target rings distinguish Early Blight from Late Blight, which develops water-soaked irregular patches rather than dry rings.',
       severityDefault: 'Moderate (Active Monitoring Required)',
     },
     {
@@ -94,6 +99,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['wilting', 'yellowing'],
       favorableCondition: 'Warm soils (>25°C) with high soil moisture.',
       visualMarkers: 'Rapid daytime wilting of foliage, slight yellowing, and brown vascular ring discoloration in stems.',
+      missingEvidence: 'Requires a clear-water stem streaming test to confirm milky bacterial streaming from xylem vessels.',
+      differentialComparison: 'Daytime wilting despite wet soil distinguishes Bacterial Wilt from dry fungal root rot, which typically displays slow progressive chlorosis.',
       severityDefault: 'High (Vascular Pathogen)',
     },
   ],
@@ -105,6 +112,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['brown_spots', 'yellowing'],
       favorableCondition: 'Warm temperatures (22–28°C) with heavy dew or rain splash.',
       visualMarkers: 'Concentric ring target spots surrounded by chlorotic yellow halos on oldest lower leaves.',
+      missingEvidence: 'Microscopic identification of beaked multicelled conidia needed to distinguish Alternaria solani from Alternaria alternata.',
+      differentialComparison: 'Target-board rings distinguish Early Blight from Septoria leaf spot, which forms smaller spots with light grey centers and dark speckles.',
       severityDefault: 'Moderate (Prompt Scouting Advised)',
     },
     {
@@ -114,6 +123,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['water_soaked', 'brown_spots', 'wilting'],
       favorableCondition: 'Cool, wet, overcast weather with RH > 90%.',
       visualMarkers: 'Greasy, water-soaked grayish lesions that rapidly expand and turn brown and paper-like.',
+      missingEvidence: 'White fungal down on leaf undersides must be confirmed while morning dew is intact.',
+      differentialComparison: 'Rapid lesion enlargement across entire leaf blades distinguishes Late Blight from localized circular Early Blight spots.',
       severityDefault: 'High (High Transmission Risk)',
     },
     {
@@ -123,6 +134,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['white_powder', 'yellowing'],
       favorableCondition: 'Moderate temperatures (18–25°C) with shaded canopy and moderate humidity.',
       visualMarkers: 'White powdery fungal patches on upper or lower leaf surfaces accompanied by bright yellow leaf patches.',
+      missingEvidence: 'Cannot confirm internal endophytic mycelium without microscopic cross-section.',
+      differentialComparison: 'Superficial white powdery talc-like coating easily differentiates Powdery Mildew from necrotic leaf blights.',
       severityDefault: 'Low to Moderate',
     },
   ],
@@ -134,6 +147,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['brown_spots', 'water_soaked'],
       favorableCondition: 'Extended leaf wetness (>10 hrs), night temperatures 20–24°C, high nitrogen.',
       visualMarkers: 'Spindle- or diamond-shaped lesions with gray or whitish centers and brown margins on leaf blades.',
+      missingEvidence: 'Requires microscopic verification of pyriform (pear-shaped) three-celled conidia.',
+      differentialComparison: 'Spindle-shaped diamond lesions distinguish Blast from Brown Spot (Bipolaris oryzae), which produces round to oval lesions.',
       severityDefault: 'High (Epidemic Potential)',
     },
     {
@@ -143,6 +158,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['water_soaked', 'brown_spots'],
       favorableCondition: 'Dense crop canopy, high humidity (>85%), temperatures 28–32°C.',
       visualMarkers: 'Greenish-gray, water-soaked oval spots on leaf sheaths near the water level, developing into irregular blotches with dark borders.',
+      missingEvidence: 'Presence of dark brown fungal sclerotia must be scouted at the base of tillers.',
+      differentialComparison: 'Basal sheath location near water surface differentiates Sheath Blight from foliar canopy leaf blast.',
       severityDefault: 'Moderate to High',
     },
   ],
@@ -154,6 +171,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['yellowing', 'brown_spots'],
       favorableCondition: 'Cool, humid weather (10–18°C) with morning dew persistence.',
       visualMarkers: 'Narrow, yellow-orange pustules arranged in conspicuous linear stripes along leaf veins.',
+      missingEvidence: 'Urediniospore viability and race classification require agricultural university rust pathology testing.',
+      differentialComparison: 'Linear striped arrangement along leaf veins distinguishes Yellow Rust from Brown Rust, which produces scattered random pustules.',
       severityDefault: 'High (Airborne Spore Spread)',
     },
     {
@@ -163,6 +182,8 @@ export const DISEASE_KNOWLEDGE_BASE = {
       primarySymptoms: ['brown_spots'],
       favorableCondition: 'Mild temperatures (15–22°C) with moisture.',
       visualMarkers: 'Small, round-to-oval orange-brown pustules scattered randomly across the upper leaf blade surface.',
+      missingEvidence: 'Cannot confirm specific rust pathotype without testing on differential wheat cultivars.',
+      differentialComparison: 'Randomly scattered oval pustules differentiate Brown Rust from linear striped Yellow Rust.',
       severityDefault: 'Moderate',
     },
   ],
@@ -216,13 +237,11 @@ function evaluateHeuristicFallback({ cropId, symptoms, notes, fileInfo, fallback
         }
       });
 
-      let likelihoodTag = 'Preliminary Candidate';
+      let likelihoodTag = 'Tentative Possibility (Preliminary Screening)';
       if (matchCount >= 2) {
-        likelihoodTag = 'Primary Symptom Correlation (Rule Match)';
+        likelihoodTag = 'Primary Possibility (Rule Correlation)';
       } else if (matchCount === 1) {
-        likelihoodTag = 'Secondary Symptom Possibility (Rule Match)';
-      } else {
-        likelihoodTag = 'Low Symptom Correlation (Baseline Check)';
+        likelihoodTag = 'Secondary Possibility (Rule Correlation)';
       }
 
       return {
@@ -230,6 +249,12 @@ function evaluateHeuristicFallback({ cropId, symptoms, notes, fileInfo, fallback
         pathogen: disease.pathogenType,
         likelihoodTag,
         visualRationale: disease.visualMarkers,
+        visualEvidencePresent: matchedSymptoms.length > 0
+          ? `User-reported visual markers: ${matchedSymptoms.join(', ')}`
+          : 'Baseline microclimate screening check',
+        missingEvidence: disease.missingEvidence || 'Microscopic spore and pathogen culture verification cannot be performed from photo pixels.',
+        evidenceMissingOrUncertain: disease.missingEvidence || 'Microscopic spore and pathogen culture verification cannot be performed from photo pixels.',
+        differentialComparison: disease.differentialComparison || 'Visual foliar lesions can overlap with related pathogens; lab culturing recommended.',
         favorableConditions: disease.favorableCondition,
         matchedSymptoms,
         matchCount,
@@ -237,6 +262,8 @@ function evaluateHeuristicFallback({ cropId, symptoms, notes, fileInfo, fallback
     })
     .filter((cand) => cand.matchCount > 0)
     .sort((a, b) => b.matchCount - a.matchCount);
+
+  const conflictingCandidates = scoredCandidates.length > 1;
 
   let severityLevel = 'Mild / Early Manifestation (Based on User Symptoms)';
   let severityDescription = 'Symptoms appear localized to isolated foliar markers. Prompt cultural management can safeguard developing yield.';
@@ -250,18 +277,40 @@ function evaluateHeuristicFallback({ cropId, symptoms, notes, fileInfo, fallback
   }
 
   const transparencyNote = fallbackReason
-    ? `Notice: ${fallbackReason} Analysis executed using transparent client-side agronomic pattern matching based on crop taxonomy and user-reported visual markers.`
-    : 'Notice: This result was generated using agronomic pattern-matching rules correlated strictly with your selected crop and user-reported visual markers. No deep-learning computer vision inference was executed on the image bytes.';
+    ? `Notice: ${fallbackReason} Analysis executed using transparent preliminary heuristic screening based strictly on crop taxonomy and user-reported visual markers.`
+    : 'Notice: This result was generated using preliminary agronomic screening rules correlated strictly with your selected crop and user-reported visual markers. No deep-learning computer vision inference was executed on the image bytes.';
+
+  const culturalPractices = [
+    'Avoid overhead sprinkler irrigation; transition to early-morning furrow or drip irrigation.',
+    'Carefully remove and safely bag severely blighted lower canopy leaves; do not leave in furrows or compost.',
+    'Sanitize sickles, shears, and harvesting tools with soap or diluted sanitizer between rows.',
+    'Increase row spacing and weed thoroughly to promote aeration through the crop canopy.'
+  ];
+
+  const chemicalDisclaimer = 'Do not apply chemical fungicides or synthetic pesticides based solely on visual inspection. For certified chemical recommendations and exact dosages, always consult your nearest Krishi Vigyan Kendra (KVK).';
+
+  const escalationTriggers = [
+    'If more than 15% of your crop canopy shows expanding spots or lesions within 48 hours.',
+    'If plants continue wilting rapidly even though the soil is sufficiently moist.',
+    'If spots turn black and spread across stems and growing shoots.'
+  ];
 
   return {
-    analysisMode: 'DEMO / Rule-Assisted Heuristic Pattern Matcher',
+    analysisMode: 'PRELIMINARY / Rule-Assisted Heuristic Pattern Matcher',
     isAiInference: false,
     aiModel: null,
+    isPlantCrop: true,
     isSuitableSpecimen: true,
+    validationStatus: 'valid_foliar',
     specimenType: 'leaf',
-    specimenLabel: 'Foliar Leaf Specimen',
-    specimenAssessment: 'Foliar canopy leaf specimen accepted for rule matching.',
-    hasUserSymptoms: true,
+    specimenLabel: 'Foliar Leaf Specimen (Heuristic Screening)',
+    specimenAssessment: 'Foliar canopy leaf specimen accepted for rule-assisted screening.',
+    identifiedSpecies: cropId,
+    speciesMatchesTarget: true,
+    isHealthy: symptoms.length === 0,
+    healthyExplanation: symptoms.length === 0 ? 'No foliar symptoms reported by user. Foliage evaluated as visibly healthy or in early incubation.' : '',
+    hasUserSymptoms: symptoms.length > 0,
+    hasConfirmedObservations: symptoms.length > 0,
     transparencyDisclaimer: transparencyNote,
     analyzedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     cropId,
@@ -280,9 +329,28 @@ function evaluateHeuristicFallback({ cropId, symptoms, notes, fileInfo, fallback
     observedVisualFeatures: [],
     userNotes: notes.trim() || 'None provided',
     candidates: scoredCandidates,
+    conflictingCandidates,
+    evidenceMissingOrUncertain: [
+      'Microscopic pathogen sporulation and bacterial streaming cannot be confirmed without laboratory culture or PCR assay.',
+      'Surface leaf photographs cannot inspect internal stem vascular bundles or root crowns.',
+      'Fungal incubation may be active in surrounding asymptomatic leaves prior to macroscopic lesion emergence.'
+    ],
+    visualEvidencePresent: symptoms.map((sId) => {
+      const match = SYMPTOM_OPTIONS.find((opt) => opt.id === sId);
+      return match ? match.label : sId;
+    }),
+    uncertaintyExplanation: conflictingCandidates
+      ? 'Multiple candidate diseases match the reported visual symptoms. In-field scouting and extension verification are required to differentiate between them.'
+      : 'Visual foliar symptoms can overlap across bacterial and fungal pathogens, or mimic abiotic nutritional chlorosis.',
+    alternativeAbioticCauses: [
+      'Visual foliar symptoms can closely mimic abiotic physiological disorders, including nitrogen chlorosis or magnesium deficiency.',
+      'Bacterial and fungal necrotic lesions can have overlapping appearances during initial infection phases.',
+      'Sun scorch, chemical fertilizer burn, or micro-pest feeding punctures can also cause foliar margin browning.'
+    ],
     alternativeExplanations: [
       'Visual foliar symptoms can closely mimic abiotic physiological disorders, including nitrogen chlorosis or magnesium deficiency.',
       'Bacterial and fungal necrotic lesions can have overlapping appearances during initial infection phases.',
+      'Sun scorch, chemical fertilizer burn, or micro-pest feeding punctures can also cause foliar margin browning.'
     ],
     severityEstimate: {
       level: severityLevel,
@@ -293,12 +361,10 @@ function evaluateHeuristicFallback({ cropId, symptoms, notes, fileInfo, fallback
       'Pixel contents were not processed by a deep-learning vision network to inspect microscopic fungal structures.',
       'Pest feeding punctures (thrips, mites) can introduce secondary opportunistic fungal saprophytes.',
     ],
-    recommendedNextSteps: [
-      'Scout in a "W" or "Z" pattern across the field plot to check if symptoms are isolated or clustered in low-lying damp spots.',
-      'Avoid entering or pruning foliage when leaves are wet with dew or rain, as brushing against wet canopies rapidly spreads inocula.',
-      'Carefully remove and bag severely blighted lower leaves; do not discard them in field irrigation furrows.',
-      'Check irrigation scheduling: transition to morning drip or furrow irrigation to minimize night-time leaf wetness duration.',
-    ],
+    culturalPractices,
+    recommendedNextSteps: culturalPractices,
+    chemicalDisclaimer,
+    escalationTriggers,
     expertConsultationGuidance: {
       recommendation: 'If symptoms expand across more than 10–15% of your crop canopy or if black stem lesions develop, take physical sample leaves in a sealed paper envelope to your nearest Krishi Vigyan Kendra (KVK) or State Agricultural Extension Office for microscopic or PCR verification.',
       contactChannels: 'Toll-free Kisan Call Centre (1800-180-1551) or certified district agronomist.',
@@ -336,13 +402,21 @@ export async function analyzeCropImage({
   if (!isLeafSpecimen) {
     const specimenLabel = specimenType === 'harvested_produce' ? 'Harvested Produce / Tuber' : 'Non-Foliar / Distant View';
     return {
-      analysisMode: 'DEMO / Rule-Assisted Heuristic Pattern Matcher',
+      analysisMode: 'PRELIMINARY / Non-Foliar Specimen Guardrail',
       isAiInference: false,
       aiModel: null,
+      isPlantCrop: true,
       isSuitableSpecimen: false,
+      validationStatus: specimenType === 'harvested_produce' ? 'harvested_produce' : 'unrelated_image',
       specimenType,
       specimenLabel,
-      specimenAssessment: 'Non-foliar view detected.',
+      identifiedSpecies: cropId,
+      speciesMatchesTarget: true,
+      isHealthy: false,
+      healthyExplanation: '',
+      hasUserSymptoms: false,
+      hasConfirmedObservations: false,
+      specimenAssessment: 'Non-foliar view detected. Foliar disease analysis requires living leaves.',
       unsuitabilityNotice: 'The uploaded image depicts harvested produce (such as tubers or picked fruit) or a distant view rather than an affected leaf. This screening system is specifically designed for foliar canopy disease symptoms. Please upload a clear, well-lit, close-up photo of an affected plant leaf or canopy stem.',
       transparencyDisclaimer: 'Notice: Uploaded image metadata is recorded, but pixel contents were not analyzed for foliar disease. Because the specimen is not a plant leaf, foliar disease candidates cannot be evaluated.',
       analyzedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -359,6 +433,9 @@ export async function analyzeCropImage({
       observedVisualFeatures: [],
       userNotes: notes.trim() || 'None provided',
       candidates: [],
+      conflictingCandidates: false,
+      uncertaintyExplanation: 'Post-harvest tuber decay criteria differ completely from foliar canopy blights.',
+      alternativeAbioticCauses: ['Post-harvest mechanical transit blemishes or bruising.'],
       alternativeExplanations: ['Post-harvest tuber rot or transit blemishes have different criteria from canopy blights.'],
       severityEstimate: {
         level: 'Non-Foliar Specimen (Screening Paused)',
@@ -368,10 +445,17 @@ export async function analyzeCropImage({
         'Post-harvest produce decay criteria differ completely from foliar canopy blights.',
         'No computer-vision model was run to inspect tuber eyes, skin, or internal flesh.',
       ],
+      culturalPractices: [
+        'Re-photograph the crop in the field: take a close-up photo of the living plant leaves showing spots or yellowing.',
+        'If investigating post-harvest tuber rot, store tubers in cool (10–12°C), dry, well-ventilated storage to avoid post-harvest humidity buildup.',
+      ],
       recommendedNextSteps: [
         'Re-photograph the crop in the field: take a close-up photo of the living plant leaves showing spots or yellowing.',
-        'If investigating post-harvest tuber rot, inspect for foul odor, soft watery decay (bacterial soft rot), or dry spongy cavities (dry rot/Fusarium).',
-        'Store tubers in cool (10–12°C), dry, well-ventilated storage to avoid post-harvest humidity buildup.',
+        'If investigating post-harvest tuber rot, store tubers in cool (10–12°C), dry, well-ventilated storage to avoid post-harvest humidity buildup.',
+      ],
+      chemicalDisclaimer: 'Do not apply chemical pesticides or unregistered fungicides to harvested produce without laboratory diagnosis.',
+      escalationTriggers: [
+        'If tubers develop foul-smelling soft rot in storage, isolate affected sacks immediately.',
       ],
       expertConsultationGuidance: {
         recommendation: 'For post-harvest tuber diagnostics or seed certification, consult a local agricultural extension office or horticulture department with a physical specimen.',
@@ -381,20 +465,27 @@ export async function analyzeCropImage({
   }
 
   // -------------------------------------------------------------------------
-  // GUARDRAIL 2: Zero Symptoms Safeguard
+  // GUARDRAIL 2: Zero Symptoms / Healthy Foliage Safeguard
   // -------------------------------------------------------------------------
   if (!hasUserSymptoms) {
     return {
-      analysisMode: 'DEMO / Rule-Assisted Heuristic Pattern Matcher',
+      analysisMode: 'PRELIMINARY / Asymptomatic Baseline Check',
       isAiInference: false,
       aiModel: null,
+      isPlantCrop: true,
       isSuitableSpecimen: true,
+      validationStatus: 'valid_foliar',
       specimenType: 'leaf',
-      specimenLabel: 'Foliar Leaf Specimen',
-      specimenAssessment: 'Asymptomatic foliar leaf view reported.',
+      specimenLabel: 'Foliar Leaf Specimen (Asymptomatic)',
+      specimenAssessment: 'Asymptomatic foliar leaf view reported. No active disease markers selected.',
+      identifiedSpecies: cropId,
+      speciesMatchesTarget: true,
+      isHealthy: true,
+      healthyExplanation: 'No visible disease symptoms were declared. If foliage appears vibrant green without necrotic lesions or sporulation, the crop is assessed as visibly healthy.',
       hasUserSymptoms: false,
+      hasConfirmedObservations: false,
       unsuitabilityNotice: null,
-      transparencyDisclaimer: 'Notice: No visible foliar symptoms were selected by the user. The system will NOT invent or guess symptoms from image pixels. Without observable symptom markers, specific disease candidates cannot be responsibly proposed or ranked.',
+      transparencyDisclaimer: 'Notice: No visible foliar symptoms were selected by the user. The system will NOT invent or guess symptoms from image pixels. Without observable symptom markers, disease candidates are not forced or proposed.',
       analyzedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       cropId,
       cropName: cropId.charAt(0).toUpperCase() + cropId.slice(1),
@@ -408,21 +499,32 @@ export async function analyzeCropImage({
       modelObservedSymptoms: [],
       observedVisualFeatures: [],
       userNotes: notes.trim() || 'None provided',
-      candidates: [], // Empty! No forcing or inventing candidates
+      candidates: [], // Strictly empty: NEVER force or invent candidates on healthy/asymptomatic plants!
+      conflictingCandidates: false,
+      uncertaintyExplanation: 'Leaf may be completely healthy or in early microscopic incubation prior to macroscopic lesion emergence.',
+      alternativeAbioticCauses: ['Leaf may be in early pre-symptomatic stage or completely healthy.'],
       alternativeExplanations: ['Leaf may be in early pre-symptomatic stage or completely healthy.'],
       severityEstimate: {
-        level: 'Undetermined (No Visible Symptoms Reported)',
-        description: 'Evidence is insufficient to rank specific disease candidates. If foliage appears healthy, continue baseline monitoring.',
+        level: 'Undetermined / Visibly Healthy (No Symptoms Reported)',
+        description: 'Evidence indicates healthy foliage or pre-symptomatic phase without reported symptoms. Continue standard cultural hygiene and monitor weather forecasts for humidity spikes.',
       },
       uncertaintyFactors: [
         'No observable symptom markers (e.g. spots, chlorosis, wilting, powder) were specified.',
         'Early incubation phases may be micro-climatically active before lesions are macroscopically visible.',
       ],
-      recommendedNextSteps: [
-        'If you observe foliar abnormalities in the field, re-evaluate and check the corresponding symptom boxes (e.g., yellow leaves, concentric brown spots).',
-        'Inspect the undersides of lower leaves in shaded canopy areas for early water-soaked lesions or white mold rings.',
+      culturalPractices: [
         'Continue routine preventive scouting: check 10 random plants across the field every 3–4 days during humid weather.',
+        'Inspect the undersides of lower leaves in shaded canopy areas for early water-soaked lesions or white mold rings.',
         'Review regional Open-Meteo weather telemetry above to watch for upcoming relative humidity spikes (>80%).',
+      ],
+      recommendedNextSteps: [
+        'Continue routine preventive scouting: check 10 random plants across the field every 3–4 days during humid weather.',
+        'Inspect the undersides of lower leaves in shaded canopy areas for early water-soaked lesions or white mold rings.',
+        'Review regional Open-Meteo weather telemetry above to watch for upcoming relative humidity spikes (>80%).',
+      ],
+      chemicalDisclaimer: 'No chemical intervention is needed or recommended for healthy foliage.',
+      escalationTriggers: [
+        'If spots or wilting appear on more than 5% of plants following heavy rain or fog, perform an updated evaluation.',
       ],
       expertConsultationGuidance: {
         recommendation: 'If you suspect early infection but cannot identify visual signs, take a high-resolution leaf sample to your local Krishi Vigyan Kendra (KVK).',
@@ -464,17 +566,28 @@ export async function analyzeCropImage({
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.isAiInference) {
-          // Genuine Gemini Vision inference succeeded!
+          const isPlant = data.isPlantCrop !== false;
+          const isSuitable = Boolean(data.isSuitableSpecimen) && isPlant;
+          const isHealthy = Boolean(data.isHealthy);
+          const validationStatus = data.validationStatus || (isSuitable ? 'valid_foliar' : (!isPlant ? 'unrelated_image' : 'unsuitable_view'));
+
           return {
             analysisMode: `GENUINE AI / Google ${data.aiModel || 'Gemini 3.5 Flash'} Multimodal Vision`,
             isAiInference: true,
             aiProvider: data.aiProvider || 'Google Gemini Vision (@google/genai)',
             aiModel: data.aiModel || 'gemini-3.5-flash',
-            isSuitableSpecimen: Boolean(data.isSuitableSpecimen),
+            isPlantCrop: isPlant,
+            isSuitableSpecimen: isSuitable,
+            validationStatus,
             specimenType,
-            specimenLabel: data.specimenLabel || 'Foliar Leaf Specimen (AI Verified)',
-            specimenAssessment: data.specimenAssessment || 'Foliar canopy leaf analyzed by Gemini Vision.',
-            hasUserSymptoms: true,
+            specimenLabel: data.specimenLabel || (isSuitable ? 'Foliar Leaf Specimen (AI Verified)' : (!isPlant ? 'Unrelated Image (Non-Plant)' : 'Unsuitable Specimen View')),
+            specimenAssessment: data.specimenAssessment || (isSuitable ? 'Foliar canopy leaf analyzed by Gemini Vision.' : 'Image not suitable for foliar diagnosis.'),
+            identifiedSpecies: data.identifiedSpecies || cropId,
+            speciesMatchesTarget: data.speciesMatchesTarget !== false,
+            isHealthy,
+            healthyExplanation: data.healthyExplanation || '',
+            hasUserSymptoms: symptoms.length > 0,
+            hasConfirmedObservations: (data.observedVisualFeatures && data.observedVisualFeatures.length > 0) || symptoms.length > 0,
             analyzedAt: data.analyzedAt || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             cropId,
             cropName: cropId.charAt(0).toUpperCase() + cropId.slice(1),
@@ -491,14 +604,24 @@ export async function analyzeCropImage({
             modelObservedSymptoms: Array.isArray(data.modelObservedSymptoms) ? data.modelObservedSymptoms : [],
             observedVisualFeatures: Array.isArray(data.observedVisualFeatures) ? data.observedVisualFeatures : [],
             userNotes: notes.trim() || 'None provided',
-            candidates: Array.isArray(data.candidates) ? data.candidates : [],
-            alternativeExplanations: Array.isArray(data.alternativeExplanations) ? data.alternativeExplanations : [],
+            candidates: isHealthy || !isSuitable ? [] : (Array.isArray(data.candidates) ? data.candidates : []),
+            conflictingCandidates: Boolean(data.conflictingCandidates),
+            uncertaintyExplanation: data.uncertaintyExplanation || 'Foliar symptoms may overlap across bacterial and fungal pathogens, or mimic abiotic physiological stress.',
+            alternativeAbioticCauses: Array.isArray(data.alternativeAbioticCauses) ? data.alternativeAbioticCauses : (Array.isArray(data.alternativeExplanations) ? data.alternativeExplanations : []),
+            alternativeExplanations: Array.isArray(data.alternativeAbioticCauses) ? data.alternativeAbioticCauses : (Array.isArray(data.alternativeExplanations) ? data.alternativeExplanations : []),
             severityEstimate: {
-              level: 'Multimodal Vision Diagnostic Match',
-              description: 'Observed foliar lesions analyzed against phytopathological patterns for target crop species.',
+              level: isHealthy ? 'Healthy Plant Foliage' : (!isSuitable ? 'Non-Foliar / Unsuitable Specimen' : 'Multimodal Vision Diagnostic Match'),
+              description: isHealthy ? 'No visible active disease lesions or chlorosis detected.' : 'Observed foliar lesions analyzed against phytopathological patterns.',
             },
             uncertaintyFactors: Array.isArray(data.uncertainties) ? data.uncertainties : [],
-            recommendedNextSteps: Array.isArray(data.scoutingAndCulturalSteps) ? data.scoutingAndCulturalSteps : [],
+            culturalPractices: Array.isArray(data.culturalPractices) ? data.culturalPractices : (Array.isArray(data.scoutingAndCulturalSteps) ? data.scoutingAndCulturalSteps : []),
+            recommendedNextSteps: Array.isArray(data.culturalPractices) ? data.culturalPractices : (Array.isArray(data.scoutingAndCulturalSteps) ? data.scoutingAndCulturalSteps : []),
+            chemicalDisclaimer: data.chemicalDisclaimer || 'Do not apply chemical fungicides or synthetic pesticides based solely on visual inspection. Always consult your nearest Krishi Vigyan Kendra (KVK).',
+            escalationTriggers: Array.isArray(data.escalationTriggers) ? data.escalationTriggers : [
+              'If more than 15% of your crop canopy shows expanding spots or lesions within 48 hours.',
+              'If plants continue wilting rapidly even though the soil is sufficiently moist.',
+              'If spots turn black and spread across stems and growing shoots.'
+            ],
             expertConsultationGuidance: {
               recommendation: data.expertConsultationAdvice || 'Confirm severe symptoms with a local Krishi Vigyan Kendra (KVK) using a physical specimen.',
               contactChannels: 'Toll-free Kisan Call Centre (1800-180-1551).',

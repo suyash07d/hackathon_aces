@@ -315,6 +315,88 @@ async function runTestSuite() {
   }
 
   // -------------------------------------------------------------------------
+  // TEST SCENARIO 11: Unrelated Non-Plant Image Safety Guardrail
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 11] Unrelated Image Safety Guardrail');
+  const unrelatedScan = await analyzeCropImage({
+    cropId: 'potato',
+    specimenType: 'other',
+    symptoms: ['brown_spots'],
+    fileInfo: { name: 'car-photo.jpg', size: 1024 * 500 },
+  });
+  assert(unrelatedScan.isSuitableSpecimen === false, 'Non-plant image marked isSuitableSpecimen = false');
+  assert(unrelatedScan.candidates.length === 0, 'No disease candidates generated for unrelated non-plant image');
+  assert(Boolean(unrelatedScan.unsuitabilityNotice), 'Clear unsuitability notice provided for non-plant image');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 12: Healthy Asymptomatic Plant Foliage Guardrail
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 12] Healthy Asymptomatic Foliage Guardrail');
+  const healthyScan = await analyzeCropImage({
+    cropId: 'tomato',
+    specimenType: 'leaf',
+    symptoms: [],
+    fileInfo: { name: 'healthy-green-leaf.jpg', size: 1024 * 300 },
+  });
+  assert(healthyScan.isHealthy === true, 'Asymptomatic leaf flagged as isHealthy = true');
+  assert(healthyScan.candidates.length === 0, 'Candidates array strictly empty for healthy plant (zero guessing)');
+  assert(Boolean(healthyScan.healthyExplanation), 'Healthy explanation provided');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 13: Conflicting Candidates & Symptom Overlap Warning
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 13] Conflicting Candidates & Symptom Overlap');
+  const multiSymptomScan = await analyzeCropImage({
+    cropId: 'potato',
+    specimenType: 'leaf',
+    symptoms: ['brown_spots', 'water_soaked'],
+    fileInfo: { name: 'spotted-leaf.jpg', size: 1024 * 400 },
+  });
+  assert(multiSymptomScan.candidates.length >= 2, 'Multiple candidate diseases ranked for overlapping symptoms');
+  assert(multiSymptomScan.conflictingCandidates === true, 'conflictingCandidates flagged true for overlapping symptom candidates');
+  assert(Boolean(multiSymptomScan.uncertaintyExplanation), 'Uncertainty explanation explains symptom overlap across pathogens');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 14: Missing or Uncertain Evidence Tracking
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 14] Missing or Uncertain Evidence Tracking');
+  assert(Boolean(multiSymptomScan.candidates[0].missingEvidence), 'Top candidate has missingEvidence field defined');
+  assert(Array.isArray(multiSymptomScan.evidenceMissingOrUncertain), 'evidenceMissingOrUncertain is an array');
+  assert(multiSymptomScan.evidenceMissingOrUncertain.length > 0, 'evidenceMissingOrUncertain has entries for lab culturing');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 15: Differential Comparison Between Similar Diseases
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 15] Differential Comparison');
+  assert(Boolean(multiSymptomScan.candidates[0].differentialComparison), 'Top candidate includes differentialComparison with similar diseases');
+  assert(multiSymptomScan.candidates[0].differentialComparison.includes('Blight') || multiSymptomScan.candidates[0].differentialComparison.includes('Early'), 'Differential comparison contrasts against related blight or spotting');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 16: Safe Cultural Practices & Chemical Pesticide Exclusion
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 16] Chemical Pesticide Exclusion & Farmer Safety');
+  assert(Boolean(multiSymptomScan.chemicalDisclaimer), 'Explicit chemical disclaimer provided');
+  assert(multiSymptomScan.chemicalDisclaimer.includes('Krishi Vigyan Kendra') || multiSymptomScan.chemicalDisclaimer.includes('chemical'), 'Chemical disclaimer advises consulting KVK/extension');
+  const allRecommendationsText = (multiSymptomScan.recommendedNextSteps || []).concat(multiSymptomScan.culturalPractices || []).join(' ');
+  assert(!allRecommendationsText.match(/\b\d+\s*(?:ml|gm|grams|kg|litres?|ppm)\b/i), 'Recommendations strictly exclude exact chemical pesticide dosages');
+
+  // -------------------------------------------------------------------------
+  // TEST SCENARIO 17: Server Vision Handler Healthy & Unrelated Validation
+  // -------------------------------------------------------------------------
+  console.log('\n[Scenario 17] Server Vision Handler Healthy and Unrelated Guardrails');
+  const serverUnrelatedReq = createMockReqRes({
+    cropId: 'potato',
+    specimenType: 'other',
+    imageBase64: 'dGVzdA==',
+    userSymptoms: [],
+  });
+  await handleCropVisionAnalysis(serverUnrelatedReq.req, serverUnrelatedReq.res);
+  assert(serverUnrelatedReq.getStatusCode() === 200, 'Server returns 200 for non-foliar view');
+  const serverUnrelatedData = serverUnrelatedReq.getData();
+  assert(serverUnrelatedData.isSuitableSpecimen === false, 'Server flags isSuitableSpecimen = false for non-foliar view');
+  assert(serverUnrelatedData.candidates.length === 0, 'Server provides 0 candidates for non-foliar view');
+
+  // -------------------------------------------------------------------------
   // SUMMARY
   // -------------------------------------------------------------------------
   console.log('\n=== TEST SUITE RESULTS ===');
